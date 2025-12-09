@@ -1,33 +1,61 @@
-// controllers/socialController.js
 import asyncHandler from 'express-async-handler';
+import jwt from 'jsonwebtoken'; 
 import SocialAccount from '../models/SocialAccount.js';
 import * as metaService from '../services/metaService.js';
 import * as linkedInService from '../services/linkedInService.js';
 
-// NOTE: req.user is populated by the authMiddleware
+// =================================================================
+// 🔗 handleCallback: Third-Party OAuth Redirect Handler
+// =================================================================
+
 export const handleCallback = asyncHandler(async (req, res, next) => {
-    const { platform } = req.params;
-    const { code, state } = req.query; // Added state for CSRF protection
+    // 🛑 FIX: Extract 'platform' from req.params
+    const { platform } = req.params; 
+    // JWT is read from the frontend redirect URL
+    const { code, state, token } = req.query; 
+
+    console.log('--- Backend Callback Debugging ---');
+    console.log(`Platform: ${platform}`);
+    console.log(`Received Code: ${code ? 'Yes' : 'No'}`);
+    console.log(`Received Token: ${token ? 'YES, starts with ' + token.substring(0, 10) : 'No'}`); 
 
     if (!code) {
         res.status(400);
         throw new Error('Authorization code missing.');
     }
 
-    // TODO: Verify state against session-stored state (implement session or pass from frontend)
-    // For now, assuming state is verified in frontend or skipping for MVP
-    // In production: if (state !== req.session.oauthState) { throw new Error('Invalid state'); }
+    // --- 1. Manual JWT Verification and User ID Extraction ---
+    let userId;
+    
+    if (token) {
+        try {
+            const decoded = jwt.verify(token, process.env.JWT_SECRET); 
+            userId = decoded.id; 
+            console.log('JWT Verification SUCCESS. Decoded User ID:', userId);
 
-    const userId = req.user._id;
-    let redirectUri = `${process.env.META_REDIRECT_BASE}/${platform}`; // Fixed: Use base + platform
-    let tokenData; // To hold { longLivedToken, expiresIn, platformId }
+        } catch (error) {
+            console.error('!!! JWT Verification FAILED in handleCallback !!!');
+            console.error(`Error Type: ${error.name}, Message: ${error.message}`);
+            
+            res.status(401);
+            throw new Error('Not authorized, invalid token provided in callback.');
+        }
+    }
+
+    if (!userId) { 
+        console.error('FATAL: Token was either missing or failed verification, and no userId was set.');
+        res.status(401); 
+        throw new Error('User not authenticated for social callback (Missing/Invalid Token).'); 
+    }
+    // ----------------------------------------------------------------------
+    
+    let redirectUri = `${process.env.META_REDIRECT_BASE}/${platform}`; 
+    let tokenData; 
     let platformKey;
 
     if (platform === 'instagram') {
         platformKey = 'INSTAGRAM';
         
-        // --- 1. Instagram Logic ---
-        // Fetch IG Business ID and Long-Lived Token
         tokenData = await metaService.getMetaLongLivedToken(code, redirectUri, platform);
         
         if (!tokenData.platformId) {
@@ -38,8 +66,7 @@ export const handleCallback = asyncHandler(async (req, res, next) => {
     } else if (platform === 'facebook') {
         platformKey = 'FACEBOOK';
         
-        // --- 2. Facebook Logic ---
-        tokenData = await metaService.getMetaLongLivedToken(code, redirectUri, platform);
+        tokenData = await metaService.getMetaLongLivedToken(code, redirectUri, platform); 
         
         if (!tokenData.platformId) {
             res.status(400);
@@ -48,9 +75,8 @@ export const handleCallback = asyncHandler(async (req, res, next) => {
 
     } else if (platform === 'linkedin') {
         platformKey = 'LINKEDIN';
-        redirectUri = process.env.LINKEDIN_REDIRECT_URI; // LinkedIn has separate redirect
+        redirectUri = process.env.LINKEDIN_REDIRECT_URI; 
         
-        // --- 3. LinkedIn Logic ---
         tokenData = await linkedInService.getLinkedInAccessToken(code, redirectUri);
         
         if (!tokenData.platformId) {
@@ -65,12 +91,10 @@ export const handleCallback = asyncHandler(async (req, res, next) => {
 
     // --- Common Logic for All Platforms ---
     if (tokenData) {
-        // Calculate expiration date
         const tokenExpires = new Date(Date.now() + tokenData.expiresIn * 1000);
 
-        // Upsert (Update or Insert) the SocialAccount
         const account = await SocialAccount.findOneAndUpdate(
-            { userId, platform: platformKey },
+            { userId, platform: platformKey }, 
             {
                 platformId: tokenData.platformId,
                 accessToken: tokenData.longLivedToken,
@@ -88,13 +112,19 @@ export const handleCallback = asyncHandler(async (req, res, next) => {
             await linkedInService.fetchAndStoreLinkedInInsights(account);
         }
 
-        res.json({ success: true, message: `${platformKey} connected and data synced.` });
+        const frontendRedirect = process.env.FRONTEND_URL || 'http://localhost:3000';
+        res.redirect(`${frontendRedirect}?sync_status=${platformKey}_SUCCESS`);
     }
 });
 
+// =================================================================
+// 🔄 syncAccountData: Manual Sync Handler (PROTECTED)
+// =================================================================
+
 export const syncAccountData = asyncHandler(async (req, res) => {
+    // This route is protected by authMiddleware, so req.user is guaranteed.
     const { platform } = req.params;
-    const userId = req.user._id;
+    const userId = req.user._id; // ✅ This is safe here
 
     const socialAccount = await SocialAccount.findOne({ userId, platform: platform.toUpperCase() });
 
@@ -102,7 +132,7 @@ export const syncAccountData = asyncHandler(async (req, res) => {
         res.status(404);
         throw new Error('Account not found. Please connect it first.');
     }
-
+    
     let result;
     if (platform === 'instagram') {
         result = await metaService.fetchAndStoreInstagramInsights(socialAccount);
@@ -117,3 +147,41 @@ export const syncAccountData = asyncHandler(async (req, res) => {
 
     res.json({ success: true, data: result });
 });
+
+// controllers/socialController.js (Add this new function)
+
+// ... (existing imports: asyncHandler, jwt, SocialAccount, etc.)
+
+// 💡 NEW FUNCTION
+// @desc    Get details for a connected social account
+// @route   GET /api/social/account/:platform
+// @access  Private (Requires JWT)
+export const getSocialAccountDetails = asyncHandler(async (req, res) => {
+    // req.user is guaranteed here by 'protect' middleware
+    const { platform } = req.params;
+    const userId = req.user._id;
+
+    // Convert platform slug to uppercase (e.g., 'linkedin' -> 'LINKEDIN')
+    const platformKey = platform.toUpperCase();
+
+    // Find the linked account for the logged-in user and specified platform
+    const socialAccount = await SocialAccount.findOne({ userId, platform: platformKey });
+
+    if (!socialAccount) {
+        res.status(404);
+        throw new Error(`Social account not connected for ${platformKey}.`);
+    }
+
+    // Return the necessary details to the frontend
+    res.json({
+        success: true,
+        platform: platformKey,
+        platformId: socialAccount.platformId,
+        followersCount: socialAccount.followersCount,
+        profileName: socialAccount.profileName, // Assuming you added this field to the model
+        lastSynced: socialAccount.lastSynced,
+        // Do NOT return accessToken or tokenExpires
+    });
+});
+
+// ... (handleCallback and syncAccountData functions remain above this)
