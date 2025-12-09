@@ -9,10 +9,11 @@ const SocialAccountSchema = mongoose.Schema({
     },
     platform: { 
         type: String, 
-        enum: ['INSTAGRAM', 'FACEBOOK', 'LINKEDIN'], 
+        // ✅ UPDATED ENUM
+        enum: ['INSTAGRAM', 'FACEBOOK', 'LINKEDIN', 'SNAPCHAT', 'YOUTUBE', 'TWITTER'], 
         required: true 
     },
-    platformId: { type: String, required: true }, // IG Business ID, FB Page ID, or LinkedIn URN
+    platformId: { type: String, required: true }, // Unique ID: IG Business ID, FB Page ID, LI URN, Snap User ID, YouTube Channel ID, Twitter User ID
     accessToken: { type: String, required: true }, // Long-lived token
     tokenExpires: Date,
     followersCount: { type: Number, default: 0 },

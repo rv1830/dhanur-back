@@ -4,11 +4,29 @@ import dotenv from 'dotenv';
 import cors from 'cors'; 
 import connectDB from './config/db.js';
 import socialRoutes from './routes/socialRoutes.js';
-import userRoutes from './routes/userRoutes.js'; // Import User Routes
+import userRoutes from './routes/userRoutes.js'; 
 import { notFound, errorHandler } from './middleware/authMiddleware.js'; 
+
+// --- SSL Fix Imports ---
+import axios from 'axios';
+import https from 'https';
+// -----------------------
 
 dotenv.config();
 connectDB(); // Connect to MongoDB
+
+// =============================================================
+// 🛠️ FIX: DEVELOPMENT SSL/TLS ERROR (FOR LINKEDIN, AXIOS)
+// =============================================================
+// Note: This is for development/debugging only. 
+// It prevents the 'AggregateError' when Node.js can't verify 
+// the HTTPS certificate of external services like LinkedIn.
+const httpsAgent = new https.Agent({
+    rejectUnauthorized: false,
+});
+axios.defaults.httpsAgent = httpsAgent;
+// =============================================================
+
 
 const app = express();
 

@@ -1,13 +1,30 @@
+// controllers/socialController.js
+
 import asyncHandler from 'express-async-handler';
 import jwt from 'jsonwebtoken'; 
+
+// --- Models ---
 import SocialAccount from '../models/SocialAccount.js';
+
+// --- Services ---
+// (Assuming these files are correctly located in the '../services/' directory)
 import * as metaService from '../services/metaService.js';
 import * as linkedInService from '../services/linkedInService.js';
+// ✅ NEW SERVICE IMPORTS
+import * as snapchatService from '../services/snapchatService.js';
+import * as youtubeService from '../services/youtubeService.js';
+import * as twitterService from '../services/twitterService.js';
+
 
 // =================================================================
 // 🔗 handleCallback: Third-Party OAuth Redirect Handler
 // =================================================================
 
+/**
+ * @desc    Handles the OAuth callback from social platforms (Now supports 6 platforms)
+ * @route   GET /api/social/callback/:platform?code=...&state=...&token=...
+ * @access  Public (Authentication done via JWT passed in the 'token' query param)
+ */
 export const handleCallback = asyncHandler(async (req, res, next) => {
     // 🛑 FIX: Extract 'platform' from req.params
     const { platform } = req.params; 
@@ -49,13 +66,15 @@ export const handleCallback = asyncHandler(async (req, res, next) => {
     }
     // ----------------------------------------------------------------------
     
-    let redirectUri = `${process.env.META_REDIRECT_BASE}/${platform}`; 
+    // NOTE: redirectUri logic is slightly platform-dependent. Using FRONTEND_URL/social/callback/ as base.
+    let redirectUri = `${process.env.FRONTEND_URL}/social/callback/${platform}`; 
     let tokenData; 
     let platformKey;
 
     if (platform === 'instagram') {
         platformKey = 'INSTAGRAM';
         
+        // Meta uses a different redirect base, adjust if needed, or stick to the unified approach
         tokenData = await metaService.getMetaLongLivedToken(code, redirectUri, platform);
         
         if (!tokenData.platformId) {
@@ -75,6 +94,7 @@ export const handleCallback = asyncHandler(async (req, res, next) => {
 
     } else if (platform === 'linkedin') {
         platformKey = 'LINKEDIN';
+        // LinkedIn often requires a specific, single, pre-registered URI
         redirectUri = process.env.LINKEDIN_REDIRECT_URI; 
         
         tokenData = await linkedInService.getLinkedInAccessToken(code, redirectUri);
@@ -82,6 +102,35 @@ export const handleCallback = asyncHandler(async (req, res, next) => {
         if (!tokenData.platformId) {
             res.status(400);
             throw new Error('LinkedIn profile not found.');
+        }
+
+    } else if (platform === 'youtube') { // ✅ YOUTUBE LOGIC ADDED
+        platformKey = 'YOUTUBE';
+        tokenData = await youtubeService.getYoutubeAccessToken(code, redirectUri);
+        
+        if (!tokenData.platformId) {
+            res.status(400);
+            throw new Error('YouTube channel not found for the authenticated user.');
+        }
+        
+    } else if (platform === 'snapchat') { // ✅ SNAPCHAT LOGIC ADDED
+        platformKey = 'SNAPCHAT';
+        tokenData = await snapchatService.getSnapchatAccessToken(code, redirectUri);
+        
+        if (!tokenData.platformId) {
+            res.status(400);
+            throw new Error('Snapchat User ID not found.');
+        }
+
+    } else if (platform === 'twitter') { // ✅ TWITTER LOGIC ADDED
+        platformKey = 'TWITTER';
+        // ⚠️ PKCE note: We assume frontend provided the necessary 'code_verifier' 
+        // to the service function, though it's simplified here.
+        tokenData = await twitterService.getTwitterAccessToken(code, redirectUri);
+        
+        if (!tokenData.platformId) {
+            res.status(400);
+            throw new Error('Twitter User ID not found.');
         }
 
     } else {
@@ -110,7 +159,14 @@ export const handleCallback = asyncHandler(async (req, res, next) => {
             await metaService.fetchAndStoreFacebookInsights(account);
         } else if (platformKey === 'LINKEDIN') {
             await linkedInService.fetchAndStoreLinkedInInsights(account);
+        } else if (platformKey === 'YOUTUBE') { // ✅ YOUTUBE SYNC
+            await youtubeService.fetchAndStoreYoutubeInsights(account);
+        } else if (platformKey === 'SNAPCHAT') { // ✅ SNAPCHAT SYNC
+            await snapchatService.fetchAndStoreSnapchatInsights(account);
+        } else if (platformKey === 'TWITTER') { // ✅ TWITTER SYNC
+            await twitterService.fetchAndStoreTwitterInsights(account);
         }
+
 
         const frontendRedirect = process.env.FRONTEND_URL || 'http://localhost:3000';
         res.redirect(`${frontendRedirect}?sync_status=${platformKey}_SUCCESS`);
@@ -121,6 +177,11 @@ export const handleCallback = asyncHandler(async (req, res, next) => {
 // 🔄 syncAccountData: Manual Sync Handler (PROTECTED)
 // =================================================================
 
+/**
+ * @desc    Manually triggers an insights sync for a connected social account
+ * @route   POST /api/social/sync/:platform
+ * @access  Private (Requires JWT from 'protect' middleware)
+ */
 export const syncAccountData = asyncHandler(async (req, res) => {
     // This route is protected by authMiddleware, so req.user is guaranteed.
     const { platform } = req.params;
@@ -134,12 +195,21 @@ export const syncAccountData = asyncHandler(async (req, res) => {
     }
     
     let result;
-    if (platform === 'instagram') {
+    const platformKey = platform.toLowerCase();
+
+    // ✅ UPDATED: Added new platforms to sync logic
+    if (platformKey === 'instagram') {
         result = await metaService.fetchAndStoreInstagramInsights(socialAccount);
-    } else if (platform === 'facebook') {
+    } else if (platformKey === 'facebook') {
         result = await metaService.fetchAndStoreFacebookInsights(socialAccount);
-    } else if (platform === 'linkedin') {
+    } else if (platformKey === 'linkedin') {
         result = await linkedInService.fetchAndStoreLinkedInInsights(socialAccount);
+    } else if (platformKey === 'youtube') {
+        result = await youtubeService.fetchAndStoreYoutubeInsights(socialAccount);
+    } else if (platformKey === 'snapchat') {
+        result = await snapchatService.fetchAndStoreSnapchatInsights(socialAccount);
+    } else if (platformKey === 'twitter') {
+        result = await twitterService.fetchAndStoreTwitterInsights(socialAccount);
     } else {
         res.status(501);
         throw new Error('Sync not implemented for this platform.');
@@ -148,14 +218,15 @@ export const syncAccountData = asyncHandler(async (req, res) => {
     res.json({ success: true, data: result });
 });
 
-// controllers/socialController.js (Add this new function)
+// =================================================================
+// 🔍 getSocialAccountDetails: Fetches Account Details (PROTECTED)
+// =================================================================
 
-// ... (existing imports: asyncHandler, jwt, SocialAccount, etc.)
-
-// 💡 NEW FUNCTION
-// @desc    Get details for a connected social account
-// @route   GET /api/social/account/:platform
-// @access  Private (Requires JWT)
+/**
+ * @desc    Get details for a connected social account
+ * @route   GET /api/social/account/:platform
+ * @access  Private (Requires JWT from 'protect' middleware)
+ */
 export const getSocialAccountDetails = asyncHandler(async (req, res) => {
     // req.user is guaranteed here by 'protect' middleware
     const { platform } = req.params;
@@ -183,5 +254,3 @@ export const getSocialAccountDetails = asyncHandler(async (req, res) => {
         // Do NOT return accessToken or tokenExpires
     });
 });
-
-// ... (handleCallback and syncAccountData functions remain above this)
