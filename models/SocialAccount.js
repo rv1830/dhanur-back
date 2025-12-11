@@ -9,15 +9,33 @@ const SocialAccountSchema = mongoose.Schema({
     },
     platform: { 
         type: String, 
-        // ✅ UPDATED ENUM
         enum: ['INSTAGRAM', 'FACEBOOK', 'LINKEDIN', 'SNAPCHAT', 'YOUTUBE', 'TWITTER'], 
         required: true 
     },
-    platformId: { type: String, required: true }, // Unique ID: IG Business ID, FB Page ID, LI URN, Snap User ID, YouTube Channel ID, Twitter User ID
-    accessToken: { type: String, required: true }, // Long-lived token
+    
+    // --- Auth & Token Management ---
+    platformId: { type: String, required: true, index: true }, 
+    accessToken: { type: String, required: true }, 
+    refreshToken: { 
+        type: String, 
+        select: false, // Hides the token by default for security
+        required: false 
+    }, 
     tokenExpires: Date,
-    followersCount: { type: Number, default: 0 },
+    
+    // --- Profile Data (from youtube.readonly) ---
+    profileName: { type: String, required: false }, // Channel Title
+    followersCount: { type: Number, default: 0 }, // Subscriber Count
+    profilePictureUrl: { type: String, required: false }, 
+    channelDescription: { type: String, required: false },
+    
+    // --- YouTube Statistics ---
+    totalVideos: { type: Number, default: 0 }, 
+    totalViews: { type: Number, default: 0 }, 
+    
+    // --- Sync Metadata ---
     lastSynced: Date,
+
 }, { timestamps: true });
 
 const SocialAccount = mongoose.model('SocialAccount', SocialAccountSchema);

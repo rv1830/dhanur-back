@@ -5,6 +5,8 @@ import jwt from 'jsonwebtoken';
 
 // --- Models ---
 import SocialAccount from '../models/SocialAccount.js';
+// NOTE: Assuming YouTubeAnalytics is imported via youtubeService
+// import YouTubeAnalytics from '../models/YouTubeAnalytics.js'; 
 
 // --- Services ---
 import * as metaService from '../services/metaService.js';
@@ -65,7 +67,7 @@ export const handleCallback = asyncHandler(async (req, res, next) => {
     // ----------------------------------------------------------------------
     
     let redirectUri = `${process.env.FRONTEND_URL}/social/callback/${platform}`; 
-    let tokenData; 
+    let tokenData; // Holds token details AND profile data
     let platformKey;
 
     if (platform === 'instagram') {
@@ -99,14 +101,15 @@ export const handleCallback = asyncHandler(async (req, res, next) => {
 
     } else if (platform === 'youtube') {
         platformKey = 'YOUTUBE';
-        tokenData = await youtubeService.getYoutubeAccessToken(code, redirectUri);
+        // 🛑 UPDATED: Get ALL tokens and full profile data
+        tokenData = await youtubeService.getYoutubeAuthData(code, redirectUri);
         
         if (!tokenData.platformId) {
             res.status(400);
             throw new Error('YouTube channel not found for the authenticated user.');
         }
         
-    } else if (platform === 'snapchat') { // ✅ SNAPCHAT LOGIC ADDED
+    } else if (platform === 'snapchat') { // ✅ SNAPCHAT LOGIC
         platformKey = 'SNAPCHAT';
         
         // 🛑 CRITICAL PKCE HANDLING 🛑
@@ -117,7 +120,6 @@ export const handleCallback = asyncHandler(async (req, res, next) => {
             throw new Error('PKCE code verifier is missing. Cannot complete Snapchat authentication.');
         }
         
-        // Passing the codeVerifier to the service function
         tokenData = await snapchatService.getSnapchatAccessToken(code, redirectUri, codeVerifier);
         
         if (!tokenData.platformId) {
@@ -125,7 +127,7 @@ export const handleCallback = asyncHandler(async (req, res, next) => {
             throw new Error('Snapchat User ID not found.');
         }
 
-    } else if (platform === 'twitter') { // ✅ TWITTER LOGIC ADDED
+    } else if (platform === 'twitter') { // ✅ TWITTER LOGIC
         platformKey = 'TWITTER';
         // ⚠️ NOTE: PKCE logic needs to be added here for Twitter too!
         tokenData = await twitterService.getTwitterAccessToken(code, redirectUri);
@@ -140,29 +142,44 @@ export const handleCallback = asyncHandler(async (req, res, next) => {
         throw new Error('Invalid platform specified.');
     }
 
-    // --- Common Logic for All Platforms ---
+    // --- Common Logic for All Platforms (UPDATED for YOUTUBE's comprehensive return) ---
     if (tokenData) {
         const tokenExpires = new Date(Date.now() + tokenData.expiresIn * 1000);
 
+        // 🛑 YOUTUBE UPDATE: Saving ALL comprehensive fields and Refresh Token
+        const updateFields = {
+            platformId: tokenData.platformId,
+            // Changed from longLivedToken to accessToken for consistency
+            accessToken: tokenData.accessToken || tokenData.longLivedToken, 
+            refreshToken: tokenData.refreshToken, // CRITICAL: Storing Refresh Token
+            tokenExpires: tokenExpires,
+            
+            // Profile fields are conditional, but save if present (YouTube provides them)
+            profileName: tokenData.profileName,
+            followersCount: tokenData.followersCount,
+            profilePictureUrl: tokenData.profilePictureUrl,
+            channelDescription: tokenData.channelDescription,
+            totalVideos: tokenData.totalVideos,
+            totalViews: tokenData.totalViews,
+            lastSynced: new Date(),
+        };
+
         const account = await SocialAccount.findOneAndUpdate(
             { userId, platform: platformKey }, 
-            {
-                platformId: tokenData.platformId,
-                accessToken: tokenData.longLivedToken,
-                tokenExpires: tokenExpires,
-            },
+            { $set: updateFields },
             { upsert: true, new: true }
         );
 
-        // Trigger initial data fetch immediately
+        // 🛑 TRIGGER INITIAL DATA FETCH IMMEDIATELY
         if (platformKey === 'INSTAGRAM') {
             await metaService.fetchAndStoreInstagramInsights(account);
         } else if (platformKey === 'FACEBOOK') {
             await metaService.fetchAndStoreFacebookInsights(account);
         } else if (platformKey === 'LINKEDIN') {
-            await linkedInService.fetchAndStoreLinkedInInsights(account);
+             await linkedInService.fetchAndStoreLinkedInInsights(account);
         } else if (platformKey === 'YOUTUBE') {
-            await youtubeService.fetchAndStoreYoutubeInsights(account);
+            // Trigger the heavy lifting: fetch 30 days of KPI data (including monetary)
+            await youtubeService.fetchAndStoreYoutubeKPIs(account); 
         } else if (platformKey === 'SNAPCHAT') {
             await snapchatService.fetchAndStoreSnapchatInsights(account);
         } else if (platformKey === 'TWITTER') {
@@ -186,6 +203,7 @@ export const handleCallback = asyncHandler(async (req, res, next) => {
  */
 export const syncAccountData = asyncHandler(async (req, res) => {
     const { platform } = req.params;
+    // NOTE: req.user._id is typically set by authentication middleware
     const userId = req.user._id; 
 
     const socialAccount = await SocialAccount.findOne({ userId, platform: platform.toUpperCase() });
@@ -206,7 +224,11 @@ export const syncAccountData = asyncHandler(async (req, res) => {
     } else if (platformKey === 'linkedin') {
         result = await linkedInService.fetchAndStoreLinkedInInsights(socialAccount);
     } else if (platformKey === 'youtube') {
-        result = await youtubeService.fetchAndStoreYoutubeInsights(socialAccount);
+        // 🛑 NOTE: Real system needs token refresh check before this call!
+        // 1. Fetch and store the time-series KPIs (the heavy lifting)
+        result = await youtubeService.fetchAndStoreYoutubeKPIs(socialAccount);
+        // 2. Refresh the basic profile stats (subscribers, name, etc.)
+        await youtubeService.fetchAndStoreYoutubeProfile(socialAccount);
     } else if (platformKey === 'snapchat') {
         result = await snapchatService.fetchAndStoreSnapchatInsights(socialAccount);
     } else if (platformKey === 'twitter') {
@@ -234,6 +256,7 @@ export const getSocialAccountDetails = asyncHandler(async (req, res) => {
 
     const platformKey = platform.toUpperCase();
 
+    // FindOne loads all the fields saved from the comprehensive update
     const socialAccount = await SocialAccount.findOne({ userId, platform: platformKey });
 
     if (!socialAccount) {
@@ -245,8 +268,12 @@ export const getSocialAccountDetails = asyncHandler(async (req, res) => {
         success: true,
         platform: platformKey,
         platformId: socialAccount.platformId,
-        followersCount: socialAccount.followersCount,
+        // All new rich profile fields are returned here:
         profileName: socialAccount.profileName, 
+        followersCount: socialAccount.followersCount,
+        profilePictureUrl: socialAccount.profilePictureUrl,
+        totalVideos: socialAccount.totalVideos,
+        totalViews: socialAccount.totalViews,
         lastSynced: socialAccount.lastSynced,
     });
 });
