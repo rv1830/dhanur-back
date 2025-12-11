@@ -1,7 +1,7 @@
 // server.js
 import express from 'express';
 import dotenv from 'dotenv';
-import cors from 'cors'; 
+import cors from 'cors'; // CORS library ko use karenge
 import connectDB from './config/db.js';
 import socialRoutes from './routes/socialRoutes.js';
 import userRoutes from './routes/userRoutes.js'; 
@@ -30,26 +30,21 @@ axios.defaults.httpsAgent = httpsAgent;
 
 const app = express();
 
-// --- CORS Configuration (Fix for frontend) ---
-const allowedOrigins = [
-    'http://localhost:3000', // Your Next.js Frontend URL
-];
-
-const corsOptions = {
-    origin: function (origin, callback) {
-        if (!origin) return callback(null, true); 
-        if (allowedOrigins.indexOf(origin) !== -1) {
-            callback(null, true);
-        } else {
-            callback(new Error('Not allowed by CORS')); 
-        }
-    },
+// =============================================================
+// 🔓 CRITICAL FIX: RELAXED CORS FOR DEVELOPMENT
+// Allowing all origins (*) to access the backend.
+// NOTE: Isko production mein secure karna zaroori hai!
+// =============================================================
+const relaxedCorsOptions = {
+    origin: '*', // Allow ALL domains/origins to make requests
     methods: 'GET,HEAD,PUT,PATCH,POST,DELETE', 
     credentials: true,
     optionsSuccessStatus: 204
 };
 
-app.use(cors(corsOptions)); 
+app.use(cors(relaxedCorsOptions)); 
+// =============================================================
+
 
 app.use(express.json()); // Body parser
 
