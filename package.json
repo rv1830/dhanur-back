@@ -1,20 +1,29 @@
 {
   "name": "dhanur-backend",
   "version": "1.0.0",
-  "description": "",
+  "description": "Backend services for Dhanur application",
   "main": "server.js",
   "type": "module",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "start": "node server.js",
-    "dev": "nodemon server.js"
+    "start": "cross-env NODE_ENV=production node server.js",
+    "dev": "cross-env NODE_ENV=development nodemon server.js",
+    "prod": "cross-env NODE_ENV=production node server.js"
   },
-  "keywords": [],
+  "keywords": [
+    "express",
+    "mongodb",
+    "social media",
+    "oauth"
+  ],
   "author": "",
   "license": "ISC",
   "dependencies": {
     "axios": "^1.13.2",
     "bcryptjs": "^3.0.3",
+    "chalk": "^5.6.2",
+    "color": "^5.0.3",
+    "colors": "^1.4.0",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
     "crypto": "^1.0.1",
@@ -32,6 +41,7 @@
     "twilio": "^5.10.7"
   },
   "devDependencies": {
+    "cross-env": "^10.1.0",
     "nodemon": "^3.1.11"
   }
 }

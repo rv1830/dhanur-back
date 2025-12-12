@@ -1,17 +1,17 @@
 // server.js
 import express from 'express';
 import dotenv from 'dotenv';
+import path from 'path'; // path module को इंपोर्ट करें
 import cors from 'cors';
 import cookieParser from 'cookie-parser';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import connectDB from './config/db.js';
 import socialRoutes from './routes/socialRoutes.js';
-import authRoutes from './routes/authRoutes.js'; // 👈 CENTRALIZED AUTH
-
+import authRoutes from './routes/authRoutes.js'; 
+import chalk from 'chalk';
 // Middleware
 import { notFound, errorHandler } from './middleware/authMiddleware.js'; 
-// import protect from './middleware/protectRoute.js'; // 👈 DELETED/MERGED
 
 // SSL Fix for Dev (LinkedIn, Google OAuth callbacks)
 import axios from 'axios';
@@ -19,7 +19,10 @@ import https from 'https';
 const httpsAgent = new https.Agent({ rejectUnauthorized: false });
 axios.defaults.httpsAgent = httpsAgent;
 
-dotenv.config();
+
+const env = process.env.NODE_ENV || 'development'; 
+dotenv.config({ path: path.resolve(process.cwd(), `.env.${env}`) });
+
 connectDB();
 
 const app = express();
@@ -53,7 +56,7 @@ app.use('/api/', limiter);
 const isProduction = process.env.NODE_ENV === 'production';
 const corsOptions = {
     origin: isProduction 
-        ? ['https://dhanur.app', 'https://www.dhanur.app'] 
+        ? ['https://dhanur.app', 'https://www.dhanur.app', 'https://dhanur-collab.vercel.app'] 
         : ['http://localhost:3000', 'http://localhost:3001'], 
     credentials: true, // Cookies bhejne ke liye zaroori
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
@@ -61,12 +64,7 @@ const corsOptions = {
 };
 app.use(cors(corsOptions));
 
-// =============================================================
-// ROUTES
-// =============================================================
 
-// Public & Protected Auth Routes (Email/Pass, Social, OTP, Logout)
-// Note: /api/users route is now obsolete. All login/register routes are under /api/auth
 app.use('/api/auth', authRoutes);      
 
 // Social Connect + Sync (Keep if these are separate from initial auth)
@@ -86,19 +84,23 @@ app.get('/', (req, res) => {
 });
 
 // =============================================================
-// ERROR HANDLING (Last mein hona chahiye)
+// ERROR HANDLING 
 // =============================================================
 app.use(notFound);
 app.use(errorHandler);
 
 // =============================================================
-// SERVER START
+// 🌟 CHANGE 2: ENHANCED SERVER START LOG
 // =============================================================
 const PORT = process.env.PORT || 5000;
 
 app.listen(PORT, () => {
-    console.log(`\n Dhanur Backend Running`);
-    console.log(` Mode: ${isProduction ? 'PRODUCTION' : 'DEVELOPMENT'}`);
-    console.log(` Server: http://localhost:${PORT}`);
-    console.log(` Health: http://localhost:${PORT}/api/health\n`);
+    const modeText = isProduction ? chalk.green.bold('PRODUCTION') : chalk.yellow.bold('DEVELOPMENT');
+    
+    console.log('============================================');
+    console.log(` 🌐 Dhanur Backend Running: ${modeText}`);
+    console.log(' 🟢 Server Status: LIVE!');
+    console.log(` 🔗 Local URL: http://localhost:${PORT}`);
+    console.log(' 🩺 Health Check: /api/health');
+    console.log('============================================');
 });

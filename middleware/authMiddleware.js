@@ -5,10 +5,10 @@ import User from '../models/User.js';
 
 // JWT Cookie Options (exported for use in controllers like logout)
 export const cookieOptions = {
-    httpOnly: false, // Prevents client-side JS access
-    secure: process.env.NODE_ENV === 'production', // Only send over HTTPS in production
-    sameSite: 'lax', // CSRF protection
-    maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
+    httpOnly: process.env.NODE_ENV === 'production', // Production: true (More secure) | Development: false (For ease of testing)
+    secure: process.env.NODE_ENV === 'production', // Production: true (Only over HTTPS) | Development: false
+    sameSite: 'lax',
+    maxAge: 30 * 24 * 60 * 60 * 1000, 
 };
 
 // =================================================================
