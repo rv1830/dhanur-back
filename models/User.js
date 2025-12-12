@@ -1,50 +1,30 @@
-// models/User.js
+// models/User.js (FINAL FIX: REMOVED PRE-SAVE HOOK)
 import mongoose from 'mongoose';
 import bcrypt from 'bcryptjs';
 
-const UserSchema = mongoose.Schema({
-    email: { 
-        type: String, 
-        required: true, 
-        unique: true 
-    },
-    password: { 
-        type: String, 
-        required: true 
-    },
-    userType: { 
-        type: String, 
-        enum: ['BRAND', 'INFLUENCER', 'ADMIN'], 
-        required: true 
-    },
-    // Optional: Influencer/Brand specific profile data
+const UserSchema = new mongoose.Schema({
+    email: { type: String, unique: true, sparse: true },
+    phoneNumber: { type: String, unique: true, sparse: true },
+    password: { type: String }, // Password field remains
+    userType: { type: String, enum: ['BRAND', 'INFLUENCER', 'ADMIN'], required: true },
+    authProvider: { type: String, enum: ['LOCAL', 'GOOGLE', 'LINKEDIN', 'PHONE'], default: 'LOCAL' },
+    googleId: { type: String, unique: true, sparse: true },
+    linkedinId: { type: String, unique: true, sparse: true },
+    tokenVersion: { type: Number, default: 0 }, 
+    verificationCode: { type: String },
+    codeExpiry: { type: Date },
     profile: {
         bio: String,
         companyName: String,
-        rateCard: mongoose.Schema.Types.Mixed, // Flexible for different rates
+        rateCard: mongoose.Schema.Types.Mixed,
     }
-}, { 
-    timestamps: true 
-});
+}, { timestamps: true });
 
-// Middleware: Hash password before saving the user (pre-save hook)
-UserSchema.pre('save', async function() {
-    
-    // Check if the password field was modified (only hash if it's new or updated)
-    if (!this.isModified('password')) {
-        return; 
-    }
-    
-    // Hash the password
-    const salt = await bcrypt.genSalt(10);
-    this.password = await bcrypt.hash(this.password, salt);
-});
+// 🛑 REMOVED: UserSchema.pre('save', ...)
 
-// Method: Compare entered password with the hashed password in the database
-UserSchema.methods.matchPassword = async function(enteredPassword) {
-    return await bcrypt.compare(enteredPassword, this.password);
+// Match password (remains the same)
+UserSchema.methods.matchPassword = async function (password) {
+    return await bcrypt.compare(password, this.password);
 };
 
-const User = mongoose.model('User', UserSchema);
-
-export default User;
+export default mongoose.model('User', UserSchema);

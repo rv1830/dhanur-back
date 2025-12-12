@@ -1,12 +1,10 @@
-// controllers/socialController.js
+// controllers/socialController.js (UPDATED FOR SECURE COOKIE AUTH)
 
 import asyncHandler from 'express-async-handler';
-import jwt from 'jsonwebtoken'; 
+// import jwt from 'jsonwebtoken'; // 🛑 NOT NEEDED here anymore since 'protect' handles verification
 
 // --- Models ---
 import SocialAccount from '../models/SocialAccount.js';
-// NOTE: Assuming YouTubeAnalytics is imported via youtubeService
-// import YouTubeAnalytics from '../models/YouTubeAnalytics.js'; 
 
 // --- Services ---
 import * as metaService from '../services/metaService.js';
@@ -17,23 +15,28 @@ import * as twitterService from '../services/twitterService.js';
 
 
 // =================================================================
-// 🔗 handleCallback: Third-Party OAuth Redirect Handler
+// 🔗 handleCallback: Third-Party OAuth Redirect Handler (PROTECTED)
 // =================================================================
 
 /**
  * @desc    Handles the OAuth callback from social platforms
- * @route   GET /api/social/callback/:platform?code=...&state=...&token=...
- * @access  Public
+ * @route   GET /api/social/callback/:platform?code=...&state=...
+ * @access  Private (Relies on 'protect' middleware to set req.user)
  */
 export const handleCallback = asyncHandler(async (req, res, next) => {
     const { platform } = req.params; 
     // codeVerifier is now expected in req.query for platforms using PKCE
-    const { code, state, token, code_verifier } = req.query; 
+    // 🛑 REMOVED 'token' from destructuring, as it is no longer expected in query
+    const { code, state, code_verifier } = req.query; 
+
+    // 🛑 FIX 1: User ID is extracted securely from the request object 
+    //           which was populated by the 'protect' middleware.
+    const userId = req.user._id;
 
     console.log('--- Backend Callback Debugging ---');
     console.log(`Platform: ${platform}`);
     console.log(`Received Code: ${code ? 'Yes' : 'No'}`);
-    console.log(`Received Token: ${token ? 'YES, starts with ' + token.substring(0, 10) : 'No'}`); 
+    console.log(`Authenticated User ID (from Cookie/Protect): ${userId}`);
     console.log(`Received Code Verifier (PKCE): ${code_verifier ? 'Yes' : 'No'}`);
 
     if (!code) {
@@ -41,30 +44,11 @@ export const handleCallback = asyncHandler(async (req, res, next) => {
         throw new Error('Authorization code missing.');
     }
 
-    // --- 1. Manual JWT Verification and User ID Extraction ---
-    let userId;
+    // 🛑 FIX 2: Removed the Manual JWT Verification block 
+    //           (The 'protect' middleware now handles this securely).
+    //           (Original code was lines 31-50, now removed.)
     
-    if (token) {
-        try {
-            const decoded = jwt.verify(token, process.env.JWT_SECRET); 
-            userId = decoded.id; 
-            console.log('JWT Verification SUCCESS. Decoded User ID:', userId);
-
-        } catch (error) {
-            console.error('!!! JWT Verification FAILED in handleCallback !!!');
-            console.error(`Error Type: ${error.name}, Message: ${error.message}`);
-            
-            res.status(401);
-            throw new Error('Not authorized, invalid token provided in callback.');
-        }
-    }
-
-    if (!userId) { 
-        console.error('FATAL: Token was either missing or failed verification, and no userId was set.');
-        res.status(401); 
-        throw new Error('User not authenticated for social callback (Missing/Invalid Token).'); 
-    }
-    // ----------------------------------------------------------------------
+    // NOTE: Since the route is protected, userId is guaranteed to be set here.
     
     let redirectUri = `${process.env.FRONTEND_URL}/social/callback/${platform}`; 
     let tokenData; // Holds token details AND profile data
@@ -142,7 +126,7 @@ export const handleCallback = asyncHandler(async (req, res, next) => {
         throw new Error('Invalid platform specified.');
     }
 
-    // --- Common Logic for All Platforms (UPDATED for YOUTUBE's comprehensive return) ---
+    // --- Common Logic for All Platforms ---
     if (tokenData) {
         const tokenExpires = new Date(Date.now() + tokenData.expiresIn * 1000);
 
@@ -165,6 +149,7 @@ export const handleCallback = asyncHandler(async (req, res, next) => {
         };
 
         const account = await SocialAccount.findOneAndUpdate(
+            // 🛑 Using the securely obtained userId:
             { userId, platform: platformKey }, 
             { $set: updateFields },
             { upsert: true, new: true }
@@ -188,6 +173,7 @@ export const handleCallback = asyncHandler(async (req, res, next) => {
 
 
         const frontendRedirect = process.env.FRONTEND_URL || 'http://localhost:3000';
+        // 🛑 Ensure this redirect goes to a valid root path (not the old 404 path)
         res.redirect(`${frontendRedirect}?sync_status=${platformKey}_SUCCESS`);
     }
 });
