@@ -58,6 +58,6 @@ router.post('/reset', resetPassword);
 router.post('/logout', protect, logoutUser);
 router.post('/change-password', protect, changePassword);
 router.get('/check-status', protect, checkAuthStatus);
-router.post('/select-usertype', protect, selectUserType);
+router.post('/select-usertype', protect, selectUserType); // ✅ New UserType Route
 
 export default router;

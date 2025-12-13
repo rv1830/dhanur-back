@@ -1,3 +1,5 @@
+// --- controllers/authController.js (UPDATED CODE) ---
+
 import asyncHandler from 'express-async-handler';
 import bcrypt from 'bcryptjs';
 import User from '../models/User.js';
@@ -10,9 +12,10 @@ import twilio from 'twilio';
 import axios from 'axios';
 
 // =================================================================
-// ⚙️ EXTERNAL SERVICE SETUP
+// ⚙️ EXTERNAL SERVICE SETUP (unchanged)
 // =================================================================
 const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
+// ... (transporter and twilioClient setup) ...
 
 const transporter = nodemailer.createTransport({
     host: process.env.SMTP_HOST,
@@ -26,18 +29,19 @@ const transporter = nodemailer.createTransport({
 
 const twilioClient = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
 
-// क्लाइंट बेस URL को .env से लें या डिफ़ॉल्ट दें
 const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:3000';
 
 // =================================================================
 // 1. BASIC EMAIL/PASSWORD AUTH
 // =================================================================
 
+// 🔥 registerUser (NO CHANGE IN LOGIC: Always redirects to onboarding)
 export const registerUser = asyncHandler(async (req, res) => {
-    const { email, password, userType } = req.body;
-    if (!email || !password || !userType) {
+    const { email, password } = req.body;
+    
+    if (!email || !password) {
         res.status(400); 
-        throw new Error('Please provide email, password, and userType.');
+        throw new Error('Please provide email and password.');
     }
     
     const userExists = await User.findOne({ email: email.toLowerCase().trim() });
@@ -50,7 +54,8 @@ export const registerUser = asyncHandler(async (req, res) => {
     const user = await User.create({ 
         email: email.toLowerCase().trim(), 
         password: hashedPassword, 
-        userType, 
+        userType: null, // New users start with null userType
+        onboardingComplete: false,
         authProvider: 'LOCAL' 
     });
     
@@ -59,11 +64,12 @@ export const registerUser = asyncHandler(async (req, res) => {
         _id: user._id, 
         email: user.email, 
         userType: user.userType,
+        onboardingComplete: user.onboardingComplete, 
         authProvider: user.authProvider,
-        message: 'Registration successful'
+        message: 'Registration successful. Redirecting to user type selection.',
+        redirectTo: '/select-usertype' // Frontend uses this flag
     });
 });
-
 export const authUser = asyncHandler(async (req, res) => {
     const { email, password } = req.body;
     console.log('🔍 Login attempt:', email);
@@ -81,12 +87,32 @@ export const authUser = asyncHandler(async (req, res) => {
     
     if (isMatch) {
         setTokenCookie(res, user); 
+        
+        // 🚨 CRITICAL FIX: Only redirect to onboarding if userType is explicitly NULL.
+        if (user.userType === null) {
+            return res.json({ 
+                _id: user._id, 
+                email: user.email, 
+                userType: user.userType,
+                onboardingComplete: user.onboardingComplete,
+                authProvider: user.authProvider,
+                message: 'Login successful. Redirecting to onboarding.',
+                redirectTo: '/select-usertype'
+            });
+        }
+
+        // If userType is not null (i.e., user is old/onboarded), send them to dashboard.
+        const dashboardPath = user.userType === 'BRAND' ? '/dashboard/brand' : 
+                             user.userType === 'INFLUENCER' ? '/dashboard/influencer' : '/dashboard'; // Fallback
+        
         res.json({ 
             _id: user._id, 
             email: user.email, 
             userType: user.userType,
+            onboardingComplete: user.onboardingComplete,
             authProvider: user.authProvider,
-            message: 'Login successful'
+            message: 'Login successful',
+            redirectTo: dashboardPath
         });
     } else {
         console.log('❌ Password mismatch');
@@ -98,6 +124,8 @@ export const authUser = asyncHandler(async (req, res) => {
 // =================================================================
 // 2. PROTECTED UTILITIES
 // =================================================================
+
+// logoutUser, changePassword, checkAuthStatus functions remain the same.
 
 export const logoutUser = asyncHandler(async (req, res) => {
     if (req.user) { await invalidateSession(req.user._id); }
@@ -134,6 +162,7 @@ export const checkAuthStatus = asyncHandler(async (req, res) => {
             email: req.user.email, 
             name: req.user.name,
             userType: req.user.userType,
+            onboardingComplete: req.user.onboardingComplete, // Onboarding status return करें
             authProvider: req.user.authProvider
         },
     });
@@ -143,19 +172,12 @@ export const checkAuthStatus = asyncHandler(async (req, res) => {
 // 3. GOOGLE AUTH - SINGLE CALLBACK WITH STATE
 // =================================================================
 
-// Google Signup - encodes userType in state
+// 🔥 MODIFIED: googleSignup अब userType को query से नहीं लेगा, बल्कि default state 'signup' ही रखेगा
 export const googleSignup = (req, res) => {
-    const { userType } = req.query;
-    
-    if (!userType || !['BRAND', 'INFLUENCER'].includes(userType)) {
-        res.status(400);
-        throw new Error('Invalid or missing userType. Must be BRAND or INFLUENCER.');
-    }
-    
     const redirectUri = process.env.GOOGLE_REDIRECT_URI;
     const scopes = 'openid profile email'; 
-    // State format: "signup:BRAND:randomhex" or "signup:INFLUENCER:randomhex"
-    const state = `signup:${userType}:${crypto.randomBytes(8).toString('hex')}`;
+    // State format: "signup:randomhex"
+    const state = `signup:${crypto.randomBytes(8).toString('hex')}`;
 
     const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?` +
         `client_id=${process.env.GOOGLE_CLIENT_ID}` +
@@ -169,7 +191,6 @@ export const googleSignup = (req, res) => {
     res.redirect(authUrl);
 };
 
-// Google Login - encodes login in state
 export const googleLogin = (req, res) => {
     const redirectUri = process.env.GOOGLE_REDIRECT_URI;
     const scopes = 'openid profile email'; 
@@ -187,28 +208,22 @@ export const googleLogin = (req, res) => {
     res.redirect(authUrl);
 };
 
-// Google Unified Callback - handles both signup and login
+// 🔥 MODIFIED: googleCallback अब userType के बजाय Onboarding status के आधार पर रीडायरेक्ट करेगा
 export const googleCallback = asyncHandler(async (req, res) => {
     const { code, state } = req.query;
 
     if (!code || !state) {
-        // अगर कोड या स्टेट मिसिंग है, तो लॉगिन पेज पर एरर के साथ रीडायरेक्ट करें
         return res.redirect(`${FRONTEND_URL}/login?error=oauth_flow_error`);
     }
 
-    // Parse state: "signup:BRAND:abc123" or "login:xyz789"
     const stateParts = state.toString().split(':');
-    const action = stateParts[0]; // "signup" or "login"
-    const userType = action === 'signup' ? stateParts[1] : null;
+    const action = stateParts[0];
     
-    if (action === 'signup' && !userType) {
-        return res.redirect(`${FRONTEND_URL}/login?error=invalid_signup_state`);
-    }
-
     const redirectUri = process.env.GOOGLE_REDIRECT_URI;
 
     let user;
     try {
+        // ... (Token exchange and profile fetching logic) ...
         const tokenResponse = await axios.post('https://oauth2.googleapis.com/token', null, {
             params: {
                 grant_type: 'authorization_code',
@@ -230,9 +245,7 @@ export const googleCallback = asyncHandler(async (req, res) => {
         user = await User.findOne({ $or: [{ googleId }, { email: email.toLowerCase().trim() }] });
         
         if (action === 'signup') {
-            // SIGNUP FLOW
             if (user) {
-                // User पहले से मौजूद है, लॉगिन पेज पर भेजें
                 return res.redirect(`${FRONTEND_URL}/login?error=user_already_exists`);
             }
 
@@ -240,20 +253,18 @@ export const googleCallback = asyncHandler(async (req, res) => {
                 email: email.toLowerCase().trim(), 
                 name: name || email.split('@')[0],
                 googleId, 
-                userType, 
+                userType: null, 
+                onboardingComplete: false, 
                 authProvider: 'GOOGLE',
                 profilePicture: picture
             });
             
         } else {
-            // LOGIN FLOW
             if (!user) {
-                // अकाउंट नहीं मिला, साइनअप पेज पर भेजें
                 return res.redirect(`${FRONTEND_URL}/signup?error=no_account_found`);
             }
 
             if (!user.googleId) {
-                // लोकल/दूसरे अकाउंट को Google से लिंक करें
                 user.googleId = googleId;
                 user.authProvider = 'GOOGLE';
                 if (!user.name) user.name = name;
@@ -263,25 +274,21 @@ export const googleCallback = asyncHandler(async (req, res) => {
         }
         
         // **--- 🎉 ऑथेंटिकेशन सफल: रीडायरेक्ट लॉजिक 🎉 ---**
-        
-        // 1. HTTP-only कुकी सेट करें
         setTokenCookie(res, user);
         
-        // 2. UserType के आधार पर पाथ चुनें
-        let dashboardPath = '/dashboard'; // Default Fallback
-        
-        if (user.userType === 'BRAND') {
-            dashboardPath = '/dashboard/brand';
-        } else if (user.userType === 'INFLUENCER') {
-            dashboardPath = '/dashboard/influencer';
+        // 🚨 CRITICAL FIX: Only redirect to onboarding if userType is explicitly NULL.
+        if (user.userType === null) {
+            return res.redirect(`${FRONTEND_URL}/select-usertype`); 
         }
+
+        // If userType is set, redirect to their dashboard
+        let dashboardPath = user.userType === 'BRAND' ? '/dashboard/brand' : 
+                             user.userType === 'INFLUENCER' ? '/dashboard/influencer' : '/dashboard'; // Fallback
         
-        // 3. क्लाइंट को सही डैशबोर्ड पर रीडायरेक्ट करें
         return res.redirect(`${FRONTEND_URL}${dashboardPath}`);
 
     } catch (error) {
         console.error("Google Callback Error:", error);
-        // किसी भी गंभीर त्रुटि पर लॉगिन पेज पर वापस भेजें
         return res.redirect(`${FRONTEND_URL}/login?error=server_error`);
     }
 });
@@ -290,24 +297,16 @@ export const googleCallback = asyncHandler(async (req, res) => {
 // 4. LINKEDIN AUTH - SINGLE CALLBACK WITH STATE
 // =================================================================
 
-// LinkedIn Signup - encodes userType in state
+// 🔥 MODIFIED: linkedinSignup अब userType को query से नहीं लेगा, बल्कि default state 'signup' ही रखेगा
 export const linkedinSignup = (req, res) => {
-    const { userType } = req.query;
-    
-    if (!userType || !['BRAND', 'INFLUENCER'].includes(userType)) {
-        res.status(400);
-        throw new Error('Invalid or missing userType. Must be BRAND or INFLUENCER.');
-    }
-    
     const scope = encodeURIComponent('openid profile email');
     const redirectUri = encodeURIComponent(process.env.LINKEDIN_REDIRECT_URI);
-    const state = `signup:${userType}:${crypto.randomBytes(8).toString('hex')}`;
+    const state = `signup:${crypto.randomBytes(8).toString('hex')}`; // userType हटा दिया
 
     const authUrl = `https://www.linkedin.com/oauth/v2/authorization?response_type=code&client_id=${process.env.LINKEDIN_CLIENT_ID}&redirect_uri=${redirectUri}&state=${state}&scope=${scope}`;
     res.redirect(authUrl);
 };
 
-// LinkedIn Login - encodes login in state
 export const linkedinLogin = (req, res) => {
     const scope = encodeURIComponent('openid profile email');
     const redirectUri = encodeURIComponent(process.env.LINKEDIN_REDIRECT_URI);
@@ -317,7 +316,7 @@ export const linkedinLogin = (req, res) => {
     res.redirect(authUrl);
 };
 
-// LinkedIn Unified Callback - handles both signup and login
+// 🔥 MODIFIED: linkedinCallback अब userType के बजाय Onboarding status के आधार पर रीडायरेक्ट करेगा
 export const linkedinCallback = asyncHandler(async (req, res) => {
     const { code, state } = req.query;
 
@@ -327,16 +326,12 @@ export const linkedinCallback = asyncHandler(async (req, res) => {
 
     const stateParts = state.toString().split(':');
     const action = stateParts[0];
-    const userType = action === 'signup' ? stateParts[1] : null;
     
-    if (action === 'signup' && !userType) {
-        return res.redirect(`${FRONTEND_URL}/login?error=invalid_signup_state`);
-    }
-
     const redirectUri = process.env.LINKEDIN_REDIRECT_URI;
     let user;
 
     try {
+        // ... (Token exchange and profile fetching logic) ...
         const tokenResponse = await axios.post('https://www.linkedin.com/oauth/v2/accessToken', null, {
             params: {
                 grant_type: 'authorization_code',
@@ -366,7 +361,8 @@ export const linkedinCallback = asyncHandler(async (req, res) => {
                 email: email.toLowerCase().trim(), 
                 name: name || email.split('@')[0],
                 linkedinId, 
-                userType, 
+                userType: null, 
+                onboardingComplete: false, 
                 authProvider: 'LINKEDIN',
                 profilePicture: picture
             });
@@ -386,20 +382,17 @@ export const linkedinCallback = asyncHandler(async (req, res) => {
         }
         
         // **--- 🎉 ऑथेंटिकेशन सफल: रीडायरेक्ट लॉजिक 🎉 ---**
-        
-        // 1. HTTP-only कुकी सेट करें
         setTokenCookie(res, user);
         
-        // 2. UserType के आधार पर पाथ चुनें
-        let dashboardPath = '/dashboard'; // Default Fallback
-        
-        if (user.userType === 'BRAND') {
-            dashboardPath = '/dashboard/brand';
-        } else if (user.userType === 'INFLUENCER') {
-            dashboardPath = '/dashboard/influencer';
+        // 🚨 CRITICAL FIX: Only redirect to onboarding if userType is explicitly NULL.
+        if (user.userType === null) {
+            return res.redirect(`${FRONTEND_URL}/select-usertype`); 
         }
+
+        // If userType is set, redirect to their dashboard
+        let dashboardPath = user.userType === 'BRAND' ? '/dashboard/brand' : 
+                             user.userType === 'INFLUENCER' ? '/dashboard/influencer' : '/dashboard'; // Fallback
         
-        // 3. क्लाइंट को सही डैशबोर्ड पर रीडायरेक्ट करें
         return res.redirect(`${FRONTEND_URL}${dashboardPath}`);
 
     } catch (error) {
@@ -412,6 +405,7 @@ export const linkedinCallback = asyncHandler(async (req, res) => {
 // 5. OTP LOGIN (Phone Number)
 // =================================================================
 
+// 🔥 MODIFIED: OTP flow में भी default userType को null सेट करें
 export const sendOtp = asyncHandler(async (req, res) => {
     const { phoneNumber } = req.body;
     
@@ -427,7 +421,8 @@ export const sendOtp = asyncHandler(async (req, res) => {
     if (!user) {
         user = await User.create({ 
             phoneNumber, 
-            userType: 'BRAND', // Default user type for new phone user
+            userType: null, // 👈 Null set किया
+            onboardingComplete: false, // 👈 False set किया
             authProvider: 'PHONE' 
         });
     }
@@ -445,6 +440,7 @@ export const sendOtp = asyncHandler(async (req, res) => {
     res.json({ message: 'OTP sent to your phone number.' });
 });
 
+// 🔥 MODIFIED: OTP Verify के बाद Onboarding check करें
 export const verifyOtp = asyncHandler(async (req, res) => {
     const { phoneNumber, otp } = req.body;
 
@@ -464,18 +460,32 @@ export const verifyOtp = asyncHandler(async (req, res) => {
     await user.save({ validateBeforeSave: false });
 
     setTokenCookie(res, user); 
+    
+    // 🚨 CRITICAL FIX: Add redirectTo field to guide frontend
+    let redirectTo = null;
+    if (user.userType === null) {
+         redirectTo = '/select-usertype';
+    } else {
+         redirectTo = user.userType === 'BRAND' ? '/dashboard/brand' : 
+                      user.userType === 'INFLUENCER' ? '/dashboard/influencer' : '/dashboard';
+    }
+    
     res.status(200).json({ 
         _id: user._id, 
         phoneNumber: user.phoneNumber, 
         userType: user.userType,
+        onboardingComplete: user.onboardingComplete,
         authProvider: user.authProvider,
-        message: 'Login successful via OTP.' 
+        message: 'Login successful via OTP.',
+        redirectTo: redirectTo
     });
 });
 
 // =================================================================
 // 6. PASSWORD RESET (Email)
 // =================================================================
+
+// sendResetCode, resetPassword functions remain the same.
 
 export const sendResetCode = asyncHandler(async (req, res) => {
     const { email } = req.body;
@@ -534,46 +544,58 @@ export const resetPassword = asyncHandler(async (req, res) => {
     res.status(200).json({ message: 'Password has been reset successfully. Please login.' });
 });
 
-// --- authController.js (New Function: selectUserType) ---
-// Note: आपको इसे routes/auth.js में protect middleware के साथ जोड़ना होगा।
+
+// =================================================================
+// 7. USERTYPE SELECTION (New Onboarding Step)
+// =================================================================
 
 export const selectUserType = asyncHandler(async (req, res) => {
     const userId = req.user._id;
     const { userType } = req.body; // Expects 'BRAND' or 'INFLUENCER'
 
-    if (!userType || !['BRAND', 'INFLUENCER'].includes(userType)) {
+    // 1. Validation
+    const validTypes = ['BRAND', 'INFLUENCER'];
+    if (!userType || !validTypes.includes(userType)) {
         res.status(400); 
         throw new Error('Invalid user type. Must be BRAND or INFLUENCER.');
     }
 
-    const user = req.user; // User object from protect middleware
+    const user = req.user; 
 
-    // **🛡️ Conflict Check (Strict Rule)**
+    // 2. 🛡️ CONFLICT CHECK (Strict Rule: Mutually Exclusive)
     if (user.userType && user.userType !== userType) {
-        // If they already chose one type, and are trying to select the other
         res.status(400);
-        throw new Error(`Conflict detected: You are already registered as an ${user.userType}. You cannot be both.`);
+        throw new Error(`Conflict detected: You are already registered as an ${user.userType}. A user cannot be both BRAND and INFLUENCER.`);
     }
 
-    // 1. User को अपडेट करें
-    user.userType = userType;
-    user.onboardingComplete = true; // Onboarding complete set करें
-    await user.save();
+    // 3. User को अपडेट करें (केवल अगर userType null है, यानी पहला चयन)
+    if (!user.userType) {
+        user.userType = userType;
+        user.onboardingComplete = true; 
+        await user.save();
+        
+        // 4. Session Invalid / New Token (Security Step: Token में updated userType होगा)
+        await invalidateSession(userId); 
+        setTokenCookie(res, user); 
+    } else if (user.userType === userType && !user.onboardingComplete) {
+        // यह केस तब हो सकता है जब कोई userType पहले ही DB में सेट हो लेकिन onboardingComplete false हो
+        user.onboardingComplete = true;
+        await user.save();
+        await invalidateSession(userId); 
+        setTokenCookie(res, user); 
+    }
     
-    // 2. Session Invalid / New Token
-    await invalidateSession(userId); // पुराने टोकन को अमान्य करें
-    setTokenCookie(res, user); // नया टोकन दें
-    
-    // 3. Success Response
-    let dashboardPath = userType === 'BRAND' ? '/dashboard/brand' : '/dashboard/influencer';
+    // 5. Success Response
+    let dashboardPath = user.userType === 'BRAND' ? '/dashboard/brand' : '/dashboard/influencer';
     
     res.status(200).json({
-        message: `User type set to ${userType}.`,
+        message: `User type set to ${user.userType}. Onboarding complete.`,
         user: { 
             _id: user._id, 
             email: user.email, 
-            userType: user.userType 
+            userType: user.userType,
+            onboardingComplete: user.onboardingComplete
         },
-        redirectTo: dashboardPath // Frontend इस पाथ का उपयोग कर सकता है
+        redirectTo: dashboardPath
     });
 });

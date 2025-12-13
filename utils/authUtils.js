@@ -14,7 +14,10 @@ export const setTokenCookie = (res, user) => {
         {
             id: user._id,
             tokenVersion: user.tokenVersion || 0,
-            // You can include more basic, non-sensitive data here
+            // Include userType and onboardingComplete status in payload to avoid unnecessary DB lookups 
+            // in some frontend logic (though 'protect' still does the main DB check).
+            userType: user.userType,
+            onboardingComplete: user.onboardingComplete || false,
         },
         process.env.JWT_SECRET,
         { expiresIn: '30d' } // Token expiry
