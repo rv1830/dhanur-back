@@ -1,7 +1,6 @@
-// controllers/socialController.js (UPDATED FOR SECURE COOKIE AUTH)
+// controllers/socialController.js (UPDATED WITH CORRECT REDIRECT)
 
 import asyncHandler from 'express-async-handler';
-// import jwt from 'jsonwebtoken'; // 🛑 NOT NEEDED here anymore since 'protect' handles verification
 
 // --- Models ---
 import SocialAccount from '../models/SocialAccount.js';
@@ -13,24 +12,20 @@ import * as snapchatService from '../services/snapchatService.js';
 import * as youtubeService from '../services/youtubeService.js';
 import * as twitterService from '../services/twitterService.js';
 
-
 // =================================================================
 // 🔗 handleCallback: Third-Party OAuth Redirect Handler (PROTECTED)
 // =================================================================
 
 /**
- * @desc    Handles the OAuth callback from social platforms
- * @route   GET /api/social/callback/:platform?code=...&state=...
- * @access  Private (Relies on 'protect' middleware to set req.user)
+ * @desc    Handles the OAuth callback from social platforms
+ * @route   GET /api/social/callback/:platform?code=...&state=...
+ * @access  Private (Relies on 'protect' middleware to set req.user)
  */
 export const handleCallback = asyncHandler(async (req, res, next) => {
     const { platform } = req.params; 
-    // codeVerifier is now expected in req.query for platforms using PKCE
-    // 🛑 REMOVED 'token' from destructuring, as it is no longer expected in query
     const { code, state, code_verifier } = req.query; 
 
-    // 🛑 FIX 1: User ID is extracted securely from the request object 
-    //           which was populated by the 'protect' middleware.
+    // User ID from protect middleware
     const userId = req.user._id;
 
     console.log('--- Backend Callback Debugging ---');
@@ -43,15 +38,9 @@ export const handleCallback = asyncHandler(async (req, res, next) => {
         res.status(400);
         throw new Error('Authorization code missing.');
     }
-
-    // 🛑 FIX 2: Removed the Manual JWT Verification block 
-    //           (The 'protect' middleware now handles this securely).
-    //           (Original code was lines 31-50, now removed.)
-    
-    // NOTE: Since the route is protected, userId is guaranteed to be set here.
     
     let redirectUri = `${process.env.FRONTEND_URL}/social/callback/${platform}`; 
-    let tokenData; // Holds token details AND profile data
+    let tokenData;
     let platformKey;
 
     if (platform === 'instagram') {
@@ -85,7 +74,6 @@ export const handleCallback = asyncHandler(async (req, res, next) => {
 
     } else if (platform === 'youtube') {
         platformKey = 'YOUTUBE';
-        // 🛑 UPDATED: Get ALL tokens and full profile data
         tokenData = await youtubeService.getYoutubeAuthData(code, redirectUri);
         
         if (!tokenData.platformId) {
@@ -93,10 +81,9 @@ export const handleCallback = asyncHandler(async (req, res, next) => {
             throw new Error('YouTube channel not found for the authenticated user.');
         }
         
-    } else if (platform === 'snapchat') { // ✅ SNAPCHAT LOGIC
+    } else if (platform === 'snapchat') {
         platformKey = 'SNAPCHAT';
         
-        // 🛑 CRITICAL PKCE HANDLING 🛑
         const codeVerifier = code_verifier; 
         
         if (!codeVerifier) {
@@ -111,9 +98,8 @@ export const handleCallback = asyncHandler(async (req, res, next) => {
             throw new Error('Snapchat User ID not found.');
         }
 
-    } else if (platform === 'twitter') { // ✅ TWITTER LOGIC
+    } else if (platform === 'twitter') {
         platformKey = 'TWITTER';
-        // ⚠️ NOTE: PKCE logic needs to be added here for Twitter too!
         tokenData = await twitterService.getTwitterAccessToken(code, redirectUri);
         
         if (!tokenData.platformId) {
@@ -130,15 +116,11 @@ export const handleCallback = asyncHandler(async (req, res, next) => {
     if (tokenData) {
         const tokenExpires = new Date(Date.now() + tokenData.expiresIn * 1000);
 
-        // 🛑 YOUTUBE UPDATE: Saving ALL comprehensive fields and Refresh Token
         const updateFields = {
             platformId: tokenData.platformId,
-            // Changed from longLivedToken to accessToken for consistency
             accessToken: tokenData.accessToken || tokenData.longLivedToken, 
-            refreshToken: tokenData.refreshToken, // CRITICAL: Storing Refresh Token
+            refreshToken: tokenData.refreshToken,
             tokenExpires: tokenExpires,
-            
-            // Profile fields are conditional, but save if present (YouTube provides them)
             profileName: tokenData.profileName,
             followersCount: tokenData.followersCount,
             profilePictureUrl: tokenData.profilePictureUrl,
@@ -149,13 +131,12 @@ export const handleCallback = asyncHandler(async (req, res, next) => {
         };
 
         const account = await SocialAccount.findOneAndUpdate(
-            // 🛑 Using the securely obtained userId:
             { userId, platform: platformKey }, 
             { $set: updateFields },
             { upsert: true, new: true }
         );
 
-        // 🛑 TRIGGER INITIAL DATA FETCH IMMEDIATELY
+        // Trigger initial data fetch
         if (platformKey === 'INSTAGRAM') {
             await metaService.fetchAndStoreInstagramInsights(account);
         } else if (platformKey === 'FACEBOOK') {
@@ -163,7 +144,6 @@ export const handleCallback = asyncHandler(async (req, res, next) => {
         } else if (platformKey === 'LINKEDIN') {
              await linkedInService.fetchAndStoreLinkedInInsights(account);
         } else if (platformKey === 'YOUTUBE') {
-            // Trigger the heavy lifting: fetch 30 days of KPI data (including monetary)
             await youtubeService.fetchAndStoreYoutubeKPIs(account); 
         } else if (platformKey === 'SNAPCHAT') {
             await snapchatService.fetchAndStoreSnapchatInsights(account);
@@ -171,10 +151,31 @@ export const handleCallback = asyncHandler(async (req, res, next) => {
             await twitterService.fetchAndStoreTwitterInsights(account);
         }
 
-
         const frontendRedirect = process.env.FRONTEND_URL || 'http://localhost:3000';
-        // 🛑 Ensure this redirect goes to a valid root path (not the old 404 path)
-        res.redirect(`${frontendRedirect}?sync_status=${platformKey}_SUCCESS`);
+        
+        // ✅ FIXED: Redirect directly to influencer dashboard connect page
+        let redirectUrl = `${frontendRedirect}/dashboard/influencer/connect`;
+        
+        // Add query parameters
+        const params = new URLSearchParams({
+            social_connected: 'true',
+            platform: platformKey,
+            success: 'true',
+            timestamp: Date.now().toString()
+        });
+        
+        if (tokenData.profileName) {
+            params.append('channel', tokenData.profileName);
+        }
+        
+        if (tokenData.followersCount) {
+            params.append('followers', tokenData.followersCount);
+        }
+        
+        redirectUrl += `?${params.toString()}`;
+        
+        console.log(`✅ FINAL REDIRECT TO: ${redirectUrl}`);
+        res.redirect(redirectUrl);
     }
 });
 
@@ -182,15 +183,9 @@ export const handleCallback = asyncHandler(async (req, res, next) => {
 // 🔄 syncAccountData: Manual Sync Handler (PROTECTED)
 // =================================================================
 
-/**
- * @desc    Manually triggers an insights sync for a connected social account
- * @route   POST /api/social/sync/:platform
- * @access  Private (Requires JWT from 'protect' middleware)
- */
 export const syncAccountData = asyncHandler(async (req, res) => {
     const { platform } = req.params;
-    // NOTE: req.user._id is typically set by authentication middleware
-    const userId = req.user._id; 
+    const userId = req.user._id;
 
     const socialAccount = await SocialAccount.findOne({ userId, platform: platform.toUpperCase() });
 
@@ -202,7 +197,6 @@ export const syncAccountData = asyncHandler(async (req, res) => {
     let result;
     const platformKey = platform.toLowerCase();
 
-    // ✅ UPDATED: Added new platforms to sync logic
     if (platformKey === 'instagram') {
         result = await metaService.fetchAndStoreInstagramInsights(socialAccount);
     } else if (platformKey === 'facebook') {
@@ -210,10 +204,7 @@ export const syncAccountData = asyncHandler(async (req, res) => {
     } else if (platformKey === 'linkedin') {
         result = await linkedInService.fetchAndStoreLinkedInInsights(socialAccount);
     } else if (platformKey === 'youtube') {
-        // 🛑 NOTE: Real system needs token refresh check before this call!
-        // 1. Fetch and store the time-series KPIs (the heavy lifting)
         result = await youtubeService.fetchAndStoreYoutubeKPIs(socialAccount);
-        // 2. Refresh the basic profile stats (subscribers, name, etc.)
         await youtubeService.fetchAndStoreYoutubeProfile(socialAccount);
     } else if (platformKey === 'snapchat') {
         result = await snapchatService.fetchAndStoreSnapchatInsights(socialAccount);
@@ -231,18 +222,12 @@ export const syncAccountData = asyncHandler(async (req, res) => {
 // 🔍 getSocialAccountDetails: Fetches Account Details (PROTECTED)
 // =================================================================
 
-/**
- * @desc    Get details for a connected social account
- * @route   GET /api/social/account/:platform
- * @access  Private (Requires JWT from 'protect' middleware)
- */
 export const getSocialAccountDetails = asyncHandler(async (req, res) => {
     const { platform } = req.params;
     const userId = req.user._id;
 
     const platformKey = platform.toUpperCase();
 
-    // FindOne loads all the fields saved from the comprehensive update
     const socialAccount = await SocialAccount.findOne({ userId, platform: platformKey });
 
     if (!socialAccount) {
@@ -254,7 +239,6 @@ export const getSocialAccountDetails = asyncHandler(async (req, res) => {
         success: true,
         platform: platformKey,
         platformId: socialAccount.platformId,
-        // All new rich profile fields are returned here:
         profileName: socialAccount.profileName, 
         followersCount: socialAccount.followersCount,
         profilePictureUrl: socialAccount.profilePictureUrl,

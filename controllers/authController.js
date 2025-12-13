@@ -246,8 +246,7 @@ export const setupProfile = asyncHandler(async (req, res) => {
 
     await user.save();
 
-    // New token with updated info
-    await invalidateSession(userId);
+    
     setTokenCookie(res, user);
 
     res.status(200).json({
@@ -683,12 +682,10 @@ export const selectUserType = asyncHandler(async (req, res) => {
         user.onboardingComplete = true;
         await user.save();
         
-        await invalidateSession(userId); 
         setTokenCookie(res, user); 
     } else if (user.userType === userType && !user.onboardingComplete) {
         user.onboardingComplete = true;
         await user.save();
-        await invalidateSession(userId); 
         setTokenCookie(res, user); 
     }
     
