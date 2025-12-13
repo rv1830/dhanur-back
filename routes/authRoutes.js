@@ -7,11 +7,13 @@ import {
     logoutUser,
     changePassword,
     checkAuthStatus,
-    // Google Auth (Unified Callback)
+    // Profile Setup (NEW)
+    setupProfile,
+    // Google Auth
     googleSignup,
     googleLogin,
     googleCallback,
-    // LinkedIn Auth (Unified Callback)
+    // LinkedIn Auth
     linkedinSignup,
     linkedinLogin,
     linkedinCallback,
@@ -20,6 +22,7 @@ import {
     verifyOtp,
     sendResetCode,
     resetPassword,
+    // User Type Selection
     selectUserType,
 } from '../controllers/authController.js';
 import { protect } from '../middleware/authMiddleware.js';
@@ -34,15 +37,15 @@ const router = express.Router();
 router.post('/register', registerUser); 
 router.post('/login', authUser);
 
-// ✅ Google Signup & Login (uses state markers)
+// ✅ Google OAuth
 router.get('/google/signup', googleSignup);
 router.get('/google/login', googleLogin);
-router.get('/google/callback', googleCallback); // Single unified callback
+router.get('/google/callback', googleCallback);
 
-// ✅ LinkedIn Signup & Login (uses state markers)
+// ✅ LinkedIn OAuth
 router.get('/linkedin/signup', linkedinSignup);
 router.get('/linkedin/login', linkedinLogin);
-router.get('/linkedin/callback', linkedinCallback); // Single unified callback
+router.get('/linkedin/callback', linkedinCallback);
 
 // ✅ OTP Login (Phone)
 router.post('/otp/send', sendOtp);
@@ -58,6 +61,11 @@ router.post('/reset', resetPassword);
 router.post('/logout', protect, logoutUser);
 router.post('/change-password', protect, changePassword);
 router.get('/check-status', protect, checkAuthStatus);
-router.post('/select-usertype', protect, selectUserType); // ✅ New UserType Route
+
+// ✅ NEW: Profile Setup Route (Step 1 after signup)
+router.post('/profile-setup', protect, setupProfile);
+
+// ✅ User Type Selection (Step 2 after profile setup)
+router.post('/select-usertype', protect, selectUserType);
 
 export default router;

@@ -1,4 +1,4 @@
-// --- controllers/authController.js (UPDATED CODE) ---
+// --- controllers/authController.js (UPDATED WITH PROFILE SETUP) ---
 
 import asyncHandler from 'express-async-handler';
 import bcrypt from 'bcryptjs';
@@ -12,10 +12,9 @@ import twilio from 'twilio';
 import axios from 'axios';
 
 // =================================================================
-// ⚙️ EXTERNAL SERVICE SETUP (unchanged)
+// ⚙️ EXTERNAL SERVICE SETUP
 // =================================================================
 const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
-// ... (transporter and twilioClient setup) ...
 
 const transporter = nodemailer.createTransport({
     host: process.env.SMTP_HOST,
@@ -35,7 +34,7 @@ const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:3000';
 // 1. BASIC EMAIL/PASSWORD AUTH
 // =================================================================
 
-// 🔥 registerUser (NO CHANGE IN LOGIC: Always redirects to onboarding)
+// 🔥 registerUser - Ab profile setup pe redirect karega
 export const registerUser = asyncHandler(async (req, res) => {
     const { email, password } = req.body;
     
@@ -54,7 +53,8 @@ export const registerUser = asyncHandler(async (req, res) => {
     const user = await User.create({ 
         email: email.toLowerCase().trim(), 
         password: hashedPassword, 
-        userType: null, // New users start with null userType
+        userType: null,
+        profileComplete: false, // 👈 New field to track profile completion
         onboardingComplete: false,
         authProvider: 'LOCAL' 
     });
@@ -64,12 +64,15 @@ export const registerUser = asyncHandler(async (req, res) => {
         _id: user._id, 
         email: user.email, 
         userType: user.userType,
+        profileComplete: user.profileComplete,
         onboardingComplete: user.onboardingComplete, 
         authProvider: user.authProvider,
-        message: 'Registration successful. Redirecting to user type selection.',
-        redirectTo: '/select-usertype' // Frontend uses this flag
+        message: 'Registration successful. Please complete your profile.',
+        redirectTo: '/profile-setup' // 👈 Pehle profile complete karwao
     });
 });
+
+// 🔥 authUser - Login logic with proper redirects
 export const authUser = asyncHandler(async (req, res) => {
     const { email, password } = req.body;
     console.log('🔍 Login attempt:', email);
@@ -81,34 +84,57 @@ export const authUser = asyncHandler(async (req, res) => {
         throw new Error('Invalid email or password');
     }
     
-    console.log('✅ Hash length:', user.password.length);
     const isMatch = await user.matchPassword(password);
-    console.log('🔑 Password match:', isMatch);
     
     if (isMatch) {
         setTokenCookie(res, user); 
         
-        // 🚨 CRITICAL FIX: Only redirect to onboarding if userType is explicitly NULL.
+        // 🚨 REDIRECT LOGIC (Priority Order):
+        // 1. If profile incomplete → /profile-setup
+        // 2. If userType null → /select-usertype  
+        // 3. Else → Dashboard
+        
+        if (!user.profileComplete) {
+            return res.json({ 
+                _id: user._id, 
+                email: user.email, 
+                name: user.name,
+                userType: user.userType,
+                profileComplete: user.profileComplete,
+                onboardingComplete: user.onboardingComplete,
+                authProvider: user.authProvider,
+                message: 'Login successful. Please complete your profile.',
+                redirectTo: '/profile-setup'
+            });
+        }
+        
         if (user.userType === null) {
             return res.json({ 
                 _id: user._id, 
                 email: user.email, 
+                name: user.name,
                 userType: user.userType,
+                profileComplete: user.profileComplete,
                 onboardingComplete: user.onboardingComplete,
                 authProvider: user.authProvider,
-                message: 'Login successful. Redirecting to onboarding.',
+                message: 'Login successful. Please select user type.',
                 redirectTo: '/select-usertype'
             });
         }
 
-        // If userType is not null (i.e., user is old/onboarded), send them to dashboard.
+        // User ka profile bhi complete hai aur userType bhi set hai
         const dashboardPath = user.userType === 'BRAND' ? '/dashboard/brand' : 
-                             user.userType === 'INFLUENCER' ? '/dashboard/influencer' : '/dashboard'; // Fallback
+                             user.userType === 'INFLUENCER' ? '/dashboard/influencer' : '/dashboard';
         
         res.json({ 
             _id: user._id, 
             email: user.email, 
+            name: user.name,
+            phoneNumber: user.phoneNumber,
+            dateOfBirth: user.dateOfBirth,
+            gender: user.gender,
             userType: user.userType,
+            profileComplete: user.profileComplete,
             onboardingComplete: user.onboardingComplete,
             authProvider: user.authProvider,
             message: 'Login successful',
@@ -124,8 +150,6 @@ export const authUser = asyncHandler(async (req, res) => {
 // =================================================================
 // 2. PROTECTED UTILITIES
 // =================================================================
-
-// logoutUser, changePassword, checkAuthStatus functions remain the same.
 
 export const logoutUser = asyncHandler(async (req, res) => {
     if (req.user) { await invalidateSession(req.user._id); }
@@ -154,6 +178,7 @@ export const changePassword = asyncHandler(async (req, res) => {
     res.status(200).json({ message: 'Password changed successfully. Please log in again.' });
 });
 
+// 🔥 UPDATED: checkAuthStatus - Ab sab details return karega
 export const checkAuthStatus = asyncHandler(async (req, res) => {
     res.status(200).json({
         isAuthenticated: true,
@@ -161,22 +186,94 @@ export const checkAuthStatus = asyncHandler(async (req, res) => {
             _id: req.user._id, 
             email: req.user.email, 
             name: req.user.name,
+            phoneNumber: req.user.phoneNumber,
+            dateOfBirth: req.user.dateOfBirth,
+            gender: req.user.gender,
+            profilePicture: req.user.profilePicture,
             userType: req.user.userType,
-            onboardingComplete: req.user.onboardingComplete, // Onboarding status return करें
-            authProvider: req.user.authProvider
+            profileComplete: req.user.profileComplete, // 👈 Profile status
+            onboardingComplete: req.user.onboardingComplete,
+            authProvider: req.user.authProvider,
+            googleId: req.user.googleId || null,
+            linkedinId: req.user.linkedinId || null,
         },
     });
 });
 
 // =================================================================
-// 3. GOOGLE AUTH - SINGLE CALLBACK WITH STATE
+// 3. PROFILE SETUP (NEW STEP)
 // =================================================================
 
-// 🔥 MODIFIED: googleSignup अब userType को query से नहीं लेगा, बल्कि default state 'signup' ही रखेगा
+// 🎯 NEW API: Profile details set karne ke liye
+export const setupProfile = asyncHandler(async (req, res) => {
+    const userId = req.user._id;
+    const { name, phoneNumber, dateOfBirth, gender } = req.body;
+
+    // Validation
+    if (!name || !phoneNumber || !dateOfBirth || !gender) {
+        res.status(400);
+        throw new Error('All fields are required: name, phoneNumber, dateOfBirth, gender');
+    }
+
+    const validGenders = ['MALE', 'FEMALE', 'OTHER'];
+    if (!validGenders.includes(gender)) {
+        res.status(400);
+        throw new Error('Invalid gender. Must be MALE, FEMALE, or OTHER.');
+    }
+
+    // Phone number validation (basic format check)
+    const phoneRegex = /^[+]?[\d\s\-()]+$/;
+    if (!phoneRegex.test(phoneNumber)) {
+        res.status(400);
+        throw new Error('Invalid phone number format.');
+    }
+
+    // Date validation
+    const dob = new Date(dateOfBirth);
+    if (isNaN(dob.getTime())) {
+        res.status(400);
+        throw new Error('Invalid date format for date of birth.');
+    }
+
+    const user = req.user;
+
+    // Update user profile
+    user.name = name.trim();
+    user.phoneNumber = phoneNumber.trim();
+    user.dateOfBirth = dob;
+    user.gender = gender;
+    user.profileComplete = true; // 👈 Profile ab complete ho gaya
+
+    await user.save();
+
+    // New token with updated info
+    await invalidateSession(userId);
+    setTokenCookie(res, user);
+
+    res.status(200).json({
+        message: 'Profile setup completed successfully. Please select your user type.',
+        user: {
+            _id: user._id,
+            email: user.email,
+            name: user.name,
+            phoneNumber: user.phoneNumber,
+            dateOfBirth: user.dateOfBirth,
+            gender: user.gender,
+            profileComplete: user.profileComplete,
+            userType: user.userType,
+            onboardingComplete: user.onboardingComplete
+        },
+        redirectTo: '/select-usertype' // 👈 Ab userType select karwao
+    });
+});
+
+// =================================================================
+// 4. GOOGLE AUTH
+// =================================================================
+
 export const googleSignup = (req, res) => {
     const redirectUri = process.env.GOOGLE_REDIRECT_URI;
     const scopes = 'openid profile email'; 
-    // State format: "signup:randomhex"
     const state = `signup:${crypto.randomBytes(8).toString('hex')}`;
 
     const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?` +
@@ -194,7 +291,6 @@ export const googleSignup = (req, res) => {
 export const googleLogin = (req, res) => {
     const redirectUri = process.env.GOOGLE_REDIRECT_URI;
     const scopes = 'openid profile email'; 
-    // State format: "login:randomhex"
     const state = `login:${crypto.randomBytes(16).toString('hex')}`;
 
     const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?` +
@@ -208,7 +304,7 @@ export const googleLogin = (req, res) => {
     res.redirect(authUrl);
 };
 
-// 🔥 MODIFIED: googleCallback अब userType के बजाय Onboarding status के आधार पर रीडायरेक्ट करेगा
+// 🔥 UPDATED: googleCallback with profile check
 export const googleCallback = asyncHandler(async (req, res) => {
     const { code, state } = req.query;
 
@@ -223,7 +319,6 @@ export const googleCallback = asyncHandler(async (req, res) => {
 
     let user;
     try {
-        // ... (Token exchange and profile fetching logic) ...
         const tokenResponse = await axios.post('https://oauth2.googleapis.com/token', null, {
             params: {
                 grant_type: 'authorization_code',
@@ -254,6 +349,7 @@ export const googleCallback = asyncHandler(async (req, res) => {
                 name: name || email.split('@')[0],
                 googleId, 
                 userType: null, 
+                profileComplete: false, // 👈 Google se signup pe bhi profile incomplete
                 onboardingComplete: false, 
                 authProvider: 'GOOGLE',
                 profilePicture: picture
@@ -273,17 +369,22 @@ export const googleCallback = asyncHandler(async (req, res) => {
             }
         }
         
-        // **--- 🎉 ऑथेंटिकेशन सफल: रीडायरेक्ट लॉजिक 🎉 ---**
+        // 🚨 REDIRECT LOGIC (Priority Order):
         setTokenCookie(res, user);
         
-        // 🚨 CRITICAL FIX: Only redirect to onboarding if userType is explicitly NULL.
+        // 1. Profile incomplete → /profile-setup
+        if (!user.profileComplete) {
+            return res.redirect(`${FRONTEND_URL}/profile-setup`);
+        }
+        
+        // 2. UserType null → /select-usertype
         if (user.userType === null) {
             return res.redirect(`${FRONTEND_URL}/select-usertype`); 
         }
 
-        // If userType is set, redirect to their dashboard
+        // 3. Else → Dashboard
         let dashboardPath = user.userType === 'BRAND' ? '/dashboard/brand' : 
-                             user.userType === 'INFLUENCER' ? '/dashboard/influencer' : '/dashboard'; // Fallback
+                             user.userType === 'INFLUENCER' ? '/dashboard/influencer' : '/dashboard';
         
         return res.redirect(`${FRONTEND_URL}${dashboardPath}`);
 
@@ -294,14 +395,13 @@ export const googleCallback = asyncHandler(async (req, res) => {
 });
 
 // =================================================================
-// 4. LINKEDIN AUTH - SINGLE CALLBACK WITH STATE
+// 5. LINKEDIN AUTH
 // =================================================================
 
-// 🔥 MODIFIED: linkedinSignup अब userType को query से नहीं लेगा, बल्कि default state 'signup' ही रखेगा
 export const linkedinSignup = (req, res) => {
     const scope = encodeURIComponent('openid profile email');
     const redirectUri = encodeURIComponent(process.env.LINKEDIN_REDIRECT_URI);
-    const state = `signup:${crypto.randomBytes(8).toString('hex')}`; // userType हटा दिया
+    const state = `signup:${crypto.randomBytes(8).toString('hex')}`;
 
     const authUrl = `https://www.linkedin.com/oauth/v2/authorization?response_type=code&client_id=${process.env.LINKEDIN_CLIENT_ID}&redirect_uri=${redirectUri}&state=${state}&scope=${scope}`;
     res.redirect(authUrl);
@@ -316,7 +416,7 @@ export const linkedinLogin = (req, res) => {
     res.redirect(authUrl);
 };
 
-// 🔥 MODIFIED: linkedinCallback अब userType के बजाय Onboarding status के आधार पर रीडायरेक्ट करेगा
+// 🔥 UPDATED: linkedinCallback with profile check
 export const linkedinCallback = asyncHandler(async (req, res) => {
     const { code, state } = req.query;
 
@@ -331,7 +431,6 @@ export const linkedinCallback = asyncHandler(async (req, res) => {
     let user;
 
     try {
-        // ... (Token exchange and profile fetching logic) ...
         const tokenResponse = await axios.post('https://www.linkedin.com/oauth/v2/accessToken', null, {
             params: {
                 grant_type: 'authorization_code',
@@ -362,6 +461,7 @@ export const linkedinCallback = asyncHandler(async (req, res) => {
                 name: name || email.split('@')[0],
                 linkedinId, 
                 userType: null, 
+                profileComplete: false, // 👈 LinkedIn se bhi profile incomplete
                 onboardingComplete: false, 
                 authProvider: 'LINKEDIN',
                 profilePicture: picture
@@ -381,17 +481,19 @@ export const linkedinCallback = asyncHandler(async (req, res) => {
             }
         }
         
-        // **--- 🎉 ऑथेंटिकेशन सफल: रीडायरेक्ट लॉजिक 🎉 ---**
+        // 🚨 REDIRECT LOGIC
         setTokenCookie(res, user);
         
-        // 🚨 CRITICAL FIX: Only redirect to onboarding if userType is explicitly NULL.
+        if (!user.profileComplete) {
+            return res.redirect(`${FRONTEND_URL}/profile-setup`);
+        }
+        
         if (user.userType === null) {
             return res.redirect(`${FRONTEND_URL}/select-usertype`); 
         }
 
-        // If userType is set, redirect to their dashboard
         let dashboardPath = user.userType === 'BRAND' ? '/dashboard/brand' : 
-                             user.userType === 'INFLUENCER' ? '/dashboard/influencer' : '/dashboard'; // Fallback
+                             user.userType === 'INFLUENCER' ? '/dashboard/influencer' : '/dashboard';
         
         return res.redirect(`${FRONTEND_URL}${dashboardPath}`);
 
@@ -402,10 +504,9 @@ export const linkedinCallback = asyncHandler(async (req, res) => {
 });
 
 // =================================================================
-// 5. OTP LOGIN (Phone Number)
+// 6. OTP LOGIN (Phone Number)
 // =================================================================
 
-// 🔥 MODIFIED: OTP flow में भी default userType को null सेट करें
 export const sendOtp = asyncHandler(async (req, res) => {
     const { phoneNumber } = req.body;
     
@@ -421,8 +522,9 @@ export const sendOtp = asyncHandler(async (req, res) => {
     if (!user) {
         user = await User.create({ 
             phoneNumber, 
-            userType: null, // 👈 Null set किया
-            onboardingComplete: false, // 👈 False set किया
+            userType: null,
+            profileComplete: false, // 👈 OTP se bhi profile incomplete
+            onboardingComplete: false,
             authProvider: 'PHONE' 
         });
     }
@@ -440,7 +542,7 @@ export const sendOtp = asyncHandler(async (req, res) => {
     res.json({ message: 'OTP sent to your phone number.' });
 });
 
-// 🔥 MODIFIED: OTP Verify के बाद Onboarding check करें
+// 🔥 UPDATED: verifyOtp with proper redirects
 export const verifyOtp = asyncHandler(async (req, res) => {
     const { phoneNumber, otp } = req.body;
 
@@ -461,19 +563,24 @@ export const verifyOtp = asyncHandler(async (req, res) => {
 
     setTokenCookie(res, user); 
     
-    // 🚨 CRITICAL FIX: Add redirectTo field to guide frontend
+    // 🚨 REDIRECT LOGIC
     let redirectTo = null;
-    if (user.userType === null) {
-         redirectTo = '/select-usertype';
+    
+    if (!user.profileComplete) {
+        redirectTo = '/profile-setup';
+    } else if (user.userType === null) {
+        redirectTo = '/select-usertype';
     } else {
-         redirectTo = user.userType === 'BRAND' ? '/dashboard/brand' : 
-                      user.userType === 'INFLUENCER' ? '/dashboard/influencer' : '/dashboard';
+        redirectTo = user.userType === 'BRAND' ? '/dashboard/brand' : 
+                     user.userType === 'INFLUENCER' ? '/dashboard/influencer' : '/dashboard';
     }
     
     res.status(200).json({ 
         _id: user._id, 
-        phoneNumber: user.phoneNumber, 
+        phoneNumber: user.phoneNumber,
+        name: user.name,
         userType: user.userType,
+        profileComplete: user.profileComplete,
         onboardingComplete: user.onboardingComplete,
         authProvider: user.authProvider,
         message: 'Login successful via OTP.',
@@ -482,10 +589,8 @@ export const verifyOtp = asyncHandler(async (req, res) => {
 });
 
 // =================================================================
-// 6. PASSWORD RESET (Email)
+// 7. PASSWORD RESET (Email)
 // =================================================================
-
-// sendResetCode, resetPassword functions remain the same.
 
 export const sendResetCode = asyncHandler(async (req, res) => {
     const { email } = req.body;
@@ -544,56 +649,62 @@ export const resetPassword = asyncHandler(async (req, res) => {
     res.status(200).json({ message: 'Password has been reset successfully. Please login.' });
 });
 
-
 // =================================================================
-// 7. USERTYPE SELECTION (New Onboarding Step)
+// 8. USERTYPE SELECTION (After Profile Setup)
 // =================================================================
 
 export const selectUserType = asyncHandler(async (req, res) => {
     const userId = req.user._id;
-    const { userType } = req.body; // Expects 'BRAND' or 'INFLUENCER'
+    const { userType } = req.body;
 
-    // 1. Validation
     const validTypes = ['BRAND', 'INFLUENCER'];
     if (!userType || !validTypes.includes(userType)) {
         res.status(400); 
         throw new Error('Invalid user type. Must be BRAND or INFLUENCER.');
     }
 
-    const user = req.user; 
+    const user = req.user;
 
-    // 2. 🛡️ CONFLICT CHECK (Strict Rule: Mutually Exclusive)
-    if (user.userType && user.userType !== userType) {
+    // 🛡️ Profile complete check
+    if (!user.profileComplete) {
         res.status(400);
-        throw new Error(`Conflict detected: You are already registered as an ${user.userType}. A user cannot be both BRAND and INFLUENCER.`);
+        throw new Error('Please complete your profile first before selecting user type.');
     }
 
-    // 3. User को अपडेट करें (केवल अगर userType null है, यानी पहला चयन)
+    // 🛡️ Conflict check
+    if (user.userType && user.userType !== userType) {
+        res.status(400);
+        throw new Error(`Conflict: You are already registered as ${user.userType}. Cannot change to both.`);
+    }
+
+    // Update user
     if (!user.userType) {
         user.userType = userType;
-        user.onboardingComplete = true; 
+        user.onboardingComplete = true;
         await user.save();
         
-        // 4. Session Invalid / New Token (Security Step: Token में updated userType होगा)
         await invalidateSession(userId); 
         setTokenCookie(res, user); 
     } else if (user.userType === userType && !user.onboardingComplete) {
-        // यह केस तब हो सकता है जब कोई userType पहले ही DB में सेट हो लेकिन onboardingComplete false हो
         user.onboardingComplete = true;
         await user.save();
         await invalidateSession(userId); 
         setTokenCookie(res, user); 
     }
     
-    // 5. Success Response
     let dashboardPath = user.userType === 'BRAND' ? '/dashboard/brand' : '/dashboard/influencer';
     
     res.status(200).json({
         message: `User type set to ${user.userType}. Onboarding complete.`,
         user: { 
             _id: user._id, 
-            email: user.email, 
+            email: user.email,
+            name: user.name,
+            phoneNumber: user.phoneNumber,
+            dateOfBirth: user.dateOfBirth,
+            gender: user.gender,
             userType: user.userType,
+            profileComplete: user.profileComplete,
             onboardingComplete: user.onboardingComplete
         },
         redirectTo: dashboardPath

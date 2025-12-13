@@ -1,41 +1,113 @@
+// --- models/User.js (COMPLETE UPDATED SCHEMA) ---
+
 import mongoose from 'mongoose';
 import bcrypt from 'bcryptjs';
 
 const UserSchema = new mongoose.Schema({
-    email: { type: String, unique: true, sparse: true },
-    phoneNumber: { type: String, unique: true, sparse: true },
-    password: { type: String }, 
+    // =================================================================
+    // 🔐 AUTHENTICATION FIELDS
+    // =================================================================
+    email: { 
+        type: String, 
+        unique: true, 
+        sparse: true,
+        lowercase: true,
+        trim: true 
+    },
+    phoneNumber: { 
+        type: String, 
+        unique: true, 
+        sparse: true 
+    },
+    password: { 
+        type: String 
+    },
     
     // =================================================================
-    // 🔥 FIXED: userType is now OPTIONAL (required: false) and allows null
+    // 👤 PROFILE FIELDS (NEW)
+    // =================================================================
+    name: { 
+        type: String, 
+        trim: true 
+    },
+    dateOfBirth: { 
+        type: Date 
+    },
+    gender: { 
+        type: String, 
+        enum: ['MALE', 'FEMALE', 'OTHER', null],
+        default: null
+    },
+    profilePicture: { 
+        type: String 
+    },
+    
+    // =================================================================
+    // 🎭 USER TYPE & ONBOARDING STATUS
     // =================================================================
     userType: { 
         type: String, 
-        // 🚨 FIX 1: 'required: true' को हटा दिया गया है
-        // Mongoose automatically sets required: false if not specified.
-        
-        // ✅ FIX 2: 'null' को enum में शामिल किया गया है
         enum: ['BRAND', 'INFLUENCER', 'ADMIN', null], 
-        
-        // ✅ FIX 3: एक डिफ़ॉल्ट मान (null) सेट किया गया है
         default: null 
     },
-    // =================================================================
+    profileComplete: { 
+        type: Boolean, 
+        default: false // 👈 Tracks if name, phone, DOB, gender are filled
+    },
+    onboardingComplete: { 
+        type: Boolean, 
+        default: false // 👈 True when userType is selected
+    },
     
-    authProvider: { type: String, enum: ['LOCAL', 'GOOGLE', 'LINKEDIN', 'PHONE'], default: 'LOCAL' },
-    googleId: { type: String, unique: true, sparse: true },
-    linkedinId: { type: String, unique: true, sparse: true },
-    tokenVersion: { type: Number, default: 0 }, 
-    verificationCode: { type: String },
-    codeExpiry: { type: Date },
+    // =================================================================
+    // 🔑 OAUTH & AUTH PROVIDER
+    // =================================================================
+    authProvider: { 
+        type: String, 
+        enum: ['LOCAL', 'GOOGLE', 'LINKEDIN', 'PHONE'], 
+        default: 'LOCAL' 
+    },
+    googleId: { 
+        type: String, 
+        unique: true, 
+        sparse: true 
+    },
+    linkedinId: { 
+        type: String, 
+        unique: true, 
+        sparse: true 
+    },
+    
+    // =================================================================
+    // 🔒 SECURITY & VERIFICATION
+    // =================================================================
+    tokenVersion: { 
+        type: Number, 
+        default: 0 
+    },
+    verificationCode: { 
+        type: String 
+    },
+    codeExpiry: { 
+        type: Date 
+    },
+    
+    // =================================================================
+    // 📝 ADDITIONAL PROFILE INFO
+    // =================================================================
     profile: {
-        bio: String,
-        companyName: String,
-        rateCard: mongoose.Schema.Types.Mixed,
+        bio: { type: String },
+        companyName: { type: String },
+        rateCard: { type: mongoose.Schema.Types.Mixed },
     }
-}, { timestamps: true });
+    
+}, { 
+    timestamps: true 
+});
 
-// ✅ ONLY MATCH PASSWORD - NO PRE-SAVE HOOK
+// =================================================================
+// 🔑 PASSWORD COMPARISON METHOD
+// =================================================================
 UserSchema.methods.matchPassword = async function(password) {
     return await bcrypt.compare(password, this.password);
 };
