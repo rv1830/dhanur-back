@@ -1,4 +1,3 @@
-// routes/authRoutes.js
 import express from 'express';
 import {
     // Basic Auth
@@ -8,46 +7,57 @@ import {
     logoutUser,
     changePassword,
     checkAuthStatus,
-    // Social & Utility Auth
-    googleLogin, googleCallback,
-    linkedinLogin, linkedinCallback,
-    sendOtp, verifyOtp,
-    sendResetCode, resetPassword,
+    // Google Auth (Unified Callback)
+    googleSignup,
+    googleLogin,
+    googleCallback,
+    // LinkedIn Auth (Unified Callback)
+    linkedinSignup,
+    linkedinLogin,
+    linkedinCallback,
+    // OTP & Reset
+    sendOtp,
+    verifyOtp,
+    sendResetCode,
+    resetPassword,
+    selectUserType,
 } from '../controllers/authController.js';
-import { protect } from '../middleware/authMiddleware.js'; // Updated import
+import { protect } from '../middleware/authMiddleware.js';
 
 const router = express.Router();
 
 // =======================
-// 🔑 Public Routes
+// 🔑 PUBLIC ROUTES
 // =======================
 
-// Basic Email/Password (from former userRoutes)
+// ✅ Basic Email/Password Auth
 router.post('/register', registerUser); 
-router.post('/login', authUser);       
+router.post('/login', authUser);
 
-// Google
-router.get('/google', googleLogin);
-router.get('/google/callback', googleCallback);
+// ✅ Google Signup & Login (uses state markers)
+router.get('/google/signup', googleSignup);
+router.get('/google/login', googleLogin);
+router.get('/google/callback', googleCallback); // Single unified callback
 
-// LinkedIn
-router.get('/linkedin', linkedinLogin);
-router.get('/linkedin/callback', linkedinCallback);
+// ✅ LinkedIn Signup & Login (uses state markers)
+router.get('/linkedin/signup', linkedinSignup);
+router.get('/linkedin/login', linkedinLogin);
+router.get('/linkedin/callback', linkedinCallback); // Single unified callback
 
-// OTP Login
+// ✅ OTP Login (Phone)
 router.post('/otp/send', sendOtp);
 router.post('/otp/verify', verifyOtp);
 
-// Reset Password
+// ✅ Password Reset
 router.post('/reset/send', sendResetCode);
 router.post('/reset', resetPassword);
 
-
 // =======================
-// 🔒 Protected Routes
+// 🔒 PROTECTED ROUTES
 // =======================
 router.post('/logout', protect, logoutUser);
 router.post('/change-password', protect, changePassword);
 router.get('/check-status', protect, checkAuthStatus);
+router.post('/select-usertype', protect, selectUserType);
 
 export default router;
