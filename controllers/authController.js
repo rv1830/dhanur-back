@@ -1,4 +1,4 @@
-// --- controllers/authController.js (UPDATED WITH PROFILE SETUP) ---
+// --- controllers/authController.js (FINAL & COMPLETE) ---
 
 import asyncHandler from 'express-async-handler';
 import bcrypt from 'bcryptjs';
@@ -34,7 +34,6 @@ const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:3000';
 // 1. BASIC EMAIL/PASSWORD AUTH
 // =================================================================
 
-// 🔥 registerUser - Ab profile setup pe redirect karega
 export const registerUser = asyncHandler(async (req, res) => {
     const { email, password } = req.body;
     
@@ -54,7 +53,7 @@ export const registerUser = asyncHandler(async (req, res) => {
         email: email.toLowerCase().trim(), 
         password: hashedPassword, 
         userType: null,
-        profileComplete: false, // 👈 New field to track profile completion
+        profileComplete: false, 
         onboardingComplete: false,
         authProvider: 'LOCAL' 
     });
@@ -68,18 +67,15 @@ export const registerUser = asyncHandler(async (req, res) => {
         onboardingComplete: user.onboardingComplete, 
         authProvider: user.authProvider,
         message: 'Registration successful. Please complete your profile.',
-        redirectTo: '/profile-setup' // 👈 Pehle profile complete karwao
+        redirectTo: '/profile-setup'
     });
 });
 
-// 🔥 authUser - Login logic with proper redirects
 export const authUser = asyncHandler(async (req, res) => {
     const { email, password } = req.body;
-    console.log('🔍 Login attempt:', email);
     
     const user = await User.findOne({ email: email.toLowerCase().trim() });
     if (!user || !user.password) {
-        console.log('❌ User not found');
         res.status(401); 
         throw new Error('Invalid email or password');
     }
@@ -88,11 +84,6 @@ export const authUser = asyncHandler(async (req, res) => {
     
     if (isMatch) {
         setTokenCookie(res, user); 
-        
-        // 🚨 REDIRECT LOGIC (Priority Order):
-        // 1. If profile incomplete → /profile-setup
-        // 2. If userType null → /select-usertype  
-        // 3. Else → Dashboard
         
         if (!user.profileComplete) {
             return res.json({ 
@@ -122,7 +113,6 @@ export const authUser = asyncHandler(async (req, res) => {
             });
         }
 
-        // User ka profile bhi complete hai aur userType bhi set hai
         const dashboardPath = user.userType === 'BRAND' ? '/dashboard/brand' : 
                              user.userType === 'INFLUENCER' ? '/dashboard/influencer' : '/dashboard';
         
@@ -141,7 +131,6 @@ export const authUser = asyncHandler(async (req, res) => {
             redirectTo: dashboardPath
         });
     } else {
-        console.log('❌ Password mismatch');
         res.status(401); 
         throw new Error('Invalid email or password');
     }
@@ -178,7 +167,6 @@ export const changePassword = asyncHandler(async (req, res) => {
     res.status(200).json({ message: 'Password changed successfully. Please log in again.' });
 });
 
-// 🔥 UPDATED: checkAuthStatus - Ab sab details return karega
 export const checkAuthStatus = asyncHandler(async (req, res) => {
     res.status(200).json({
         isAuthenticated: true,
@@ -191,7 +179,7 @@ export const checkAuthStatus = asyncHandler(async (req, res) => {
             gender: req.user.gender,
             profilePicture: req.user.profilePicture,
             userType: req.user.userType,
-            profileComplete: req.user.profileComplete, // 👈 Profile status
+            profileComplete: req.user.profileComplete, 
             onboardingComplete: req.user.onboardingComplete,
             authProvider: req.user.authProvider,
             googleId: req.user.googleId || null,
@@ -204,12 +192,10 @@ export const checkAuthStatus = asyncHandler(async (req, res) => {
 // 3. PROFILE SETUP (NEW STEP)
 // =================================================================
 
-// 🎯 NEW API: Profile details set karne ke liye
 export const setupProfile = asyncHandler(async (req, res) => {
     const userId = req.user._id;
     const { name, phoneNumber, dateOfBirth, gender } = req.body;
 
-    // Validation
     if (!name || !phoneNumber || !dateOfBirth || !gender) {
         res.status(400);
         throw new Error('All fields are required: name, phoneNumber, dateOfBirth, gender');
@@ -221,14 +207,12 @@ export const setupProfile = asyncHandler(async (req, res) => {
         throw new Error('Invalid gender. Must be MALE, FEMALE, or OTHER.');
     }
 
-    // Phone number validation (basic format check)
     const phoneRegex = /^[+]?[\d\s\-()]+$/;
     if (!phoneRegex.test(phoneNumber)) {
         res.status(400);
         throw new Error('Invalid phone number format.');
     }
 
-    // Date validation
     const dob = new Date(dateOfBirth);
     if (isNaN(dob.getTime())) {
         res.status(400);
@@ -237,32 +221,30 @@ export const setupProfile = asyncHandler(async (req, res) => {
 
     const user = req.user;
 
-    // Update user profile
     user.name = name.trim();
     user.phoneNumber = phoneNumber.trim();
     user.dateOfBirth = dob;
     user.gender = gender;
-    user.profileComplete = true; // 👈 Profile ab complete ho gaya
+    user.profileComplete = true;
 
     await user.save();
 
-    
     setTokenCookie(res, user);
 
     res.status(200).json({
         message: 'Profile setup completed successfully. Please select your user type.',
         user: {
-            _id: user._id,
-            email: user.email,
-            name: user.name,
-            phoneNumber: user.phoneNumber,
-            dateOfBirth: user.dateOfBirth,
-            gender: user.gender,
-            profileComplete: user.profileComplete,
-            userType: user.userType,
-            onboardingComplete: user.onboardingComplete
+             _id: user._id,
+             email: user.email,
+             name: user.name,
+             phoneNumber: user.phoneNumber,
+             dateOfBirth: user.dateOfBirth,
+             gender: user.gender,
+             profileComplete: user.profileComplete,
+             userType: user.userType,
+             onboardingComplete: user.onboardingComplete
         },
-        redirectTo: '/select-usertype' // 👈 Ab userType select karwao
+        redirectTo: '/select-usertype'
     });
 });
 
@@ -303,7 +285,7 @@ export const googleLogin = (req, res) => {
     res.redirect(authUrl);
 };
 
-// 🔥 UPDATED: googleCallback with profile check
+// 🔥 googleCallback (Fixed Redirect)
 export const googleCallback = asyncHandler(async (req, res) => {
     const { code, state } = req.query;
 
@@ -348,7 +330,7 @@ export const googleCallback = asyncHandler(async (req, res) => {
                 name: name || email.split('@')[0],
                 googleId, 
                 userType: null, 
-                profileComplete: false, // 👈 Google se signup pe bhi profile incomplete
+                profileComplete: false,
                 onboardingComplete: false, 
                 authProvider: 'GOOGLE',
                 profilePicture: picture
@@ -368,12 +350,12 @@ export const googleCallback = asyncHandler(async (req, res) => {
             }
         }
         
-        // 🚨 REDIRECT LOGIC (Priority Order):
+        // 🚨 REDIRECT LOGIC
         setTokenCookie(res, user);
         
         // 1. Profile incomplete → /profile-setup
         if (!user.profileComplete) {
-            return res.redirect(`${FRONTEND_URL}/profile-setup`);
+            return res.redirect(`${FRONTEND_URL}/profile-setup`); 
         }
         
         // 2. UserType null → /select-usertype
@@ -394,28 +376,30 @@ export const googleCallback = asyncHandler(async (req, res) => {
 });
 
 // =================================================================
-// 5. LINKEDIN AUTH
+// 5. LINKEDIN AUTH (CRITICAL FIX APPLIED)
 // =================================================================
 
 export const linkedinSignup = (req, res) => {
-    const scope = encodeURIComponent('openid profile email');
-    const redirectUri = encodeURIComponent(process.env.LINKEDIN_REDIRECT_URI);
-    const state = `signup:${crypto.randomBytes(8).toString('hex')}`;
+    // 🔑 FIX: Auth flow के लिए नया वेरिएबल उपयोग करें
+    const redirectUri = encodeURIComponent(process.env.LINKEDIN_AUTH_REDIRECT_URI);
+    const scope = encodeURIComponent('openid profile email');
+    const state = `signup:${crypto.randomBytes(8).toString('hex')}`;
 
-    const authUrl = `https://www.linkedin.com/oauth/v2/authorization?response_type=code&client_id=${process.env.LINKEDIN_CLIENT_ID}&redirect_uri=${redirectUri}&state=${state}&scope=${scope}`;
-    res.redirect(authUrl);
+    const authUrl = `https://www.linkedin.com/oauth/v2/authorization?response_type=code&client_id=${process.env.LINKEDIN_CLIENT_ID}&redirect_uri=${redirectUri}&state=${state}&scope=${scope}`;
+    res.redirect(authUrl);
 };
 
 export const linkedinLogin = (req, res) => {
-    const scope = encodeURIComponent('openid profile email');
-    const redirectUri = encodeURIComponent(process.env.LINKEDIN_REDIRECT_URI);
-    const state = `login:${crypto.randomBytes(16).toString('hex')}`;
+    // 🔑 FIX: Auth flow के लिए नया वेरिएबल उपयोग करें
+    const redirectUri = encodeURIComponent(process.env.LINKEDIN_AUTH_REDIRECT_URI);
+    const scope = encodeURIComponent('openid profile email');
+    const state = `login:${crypto.randomBytes(16).toString('hex')}`;
 
-    const authUrl = `https://www.linkedin.com/oauth/v2/authorization?response_type=code&client_id=${process.env.LINKEDIN_CLIENT_ID}&redirect_uri=${redirectUri}&state=${state}&scope=${scope}`;
-    res.redirect(authUrl);
+    const authUrl = `https://www.linkedin.com/oauth/v2/authorization?response_type=code&client_id=${process.env.LINKEDIN_CLIENT_ID}&redirect_uri=${redirectUri}&state=${state}&scope=${scope}`;
+    res.redirect(authUrl);
 };
 
-// 🔥 UPDATED: linkedinCallback with profile check
+// 🔥 linkedinCallback (FIXED for missing email/DB entry failure + Added Debugging)
 export const linkedinCallback = asyncHandler(async (req, res) => {
     const { code, state } = req.query;
 
@@ -426,10 +410,13 @@ export const linkedinCallback = asyncHandler(async (req, res) => {
     const stateParts = state.toString().split(':');
     const action = stateParts[0];
     
-    const redirectUri = process.env.LINKEDIN_REDIRECT_URI;
+    const redirectUri = process.env.LINKEDIN_AUTH_REDIRECT_URI;
     let user;
 
     try {
+        console.log('--- 🔗 LinkedIn Auth Flow Start ---');
+        
+        // 1. CODE TO ACCESS TOKEN EXCHANGE
         const tokenResponse = await axios.post('https://www.linkedin.com/oauth/v2/accessToken', null, {
             params: {
                 grant_type: 'authorization_code',
@@ -441,36 +428,59 @@ export const linkedinCallback = asyncHandler(async (req, res) => {
         });
 
         const accessToken = tokenResponse.data.access_token;
+        console.log('✅ 1. Access Token Received.');
 
+        // 2. FETCH USER PROFILE (userinfo)
         const profileResponse = await axios.get('https://api.linkedin.com/v2/userinfo', {
             headers: { Authorization: `Bearer ${accessToken}` }
         });
         
         const { sub: linkedinId, email, name, picture } = profileResponse.data;
+        
+        // 🔑 CRITICAL FIX: Handle missing email (set to null if not provided by LinkedIn)
+        const userEmail = email ? email.toLowerCase().trim() : null; 
+        
+        console.log('✅ 2. Profile Data Fetched:', { linkedinId, email: userEmail, name }); 
 
-        user = await User.findOne({ $or: [{ linkedinId }, { email: email.toLowerCase().trim() }] });
+        // 3. USER FIND/CREATE LOGIC
+        const findQuery = { $or: [{ linkedinId }] };
+        if (userEmail) {
+            findQuery.$or.push({ email: userEmail });
+        }
+        
+        user = await User.findOne(findQuery);
         
         if (action === 'signup') {
             if (user) {
                 return res.redirect(`${FRONTEND_URL}/login?error=user_already_exists`);
             }
 
-            user = await User.create({ 
-                email: email.toLowerCase().trim(), 
-                name: name || email.split('@')[0],
+            // Create User: Uses userEmail (which might be null)
+            const newUser = await User.create({ 
+                email: userEmail, 
+                name: name || 'LinkedIn User', 
                 linkedinId, 
                 userType: null, 
-                profileComplete: false, // 👈 LinkedIn se bhi profile incomplete
+                profileComplete: false, 
                 onboardingComplete: false, 
                 authProvider: 'LINKEDIN',
                 profilePicture: picture
             });
             
-        } else {
+            // Check if DB operation failed silently (unlikely but safe check)
+            if (!newUser) {
+                throw new Error("Failed to create user entry in database during signup.");
+            }
+            
+            user = newUser; 
+            console.log('✅ 3. New User CREATED successfully:', user._id);
+            
+        } else { // Login
             if (!user) {
                 return res.redirect(`${FRONTEND_URL}/signup?error=no_account_found`);
             }
 
+            // Link existing user if logging in with email match
             if (!user.linkedinId) {
                 user.linkedinId = linkedinId;
                 user.authProvider = 'LINKEDIN';
@@ -478,10 +488,12 @@ export const linkedinCallback = asyncHandler(async (req, res) => {
                 if (!user.profilePicture) user.profilePicture = picture;
                 await user.save();
             }
+            console.log('✅ 3. User LOGGED IN/LINKED successfully.');
         }
         
-        // 🚨 REDIRECT LOGIC
+        // 4. SET TOKEN AND REDIRECT
         setTokenCookie(res, user);
+        console.log('✅ 4. JWT Token Set in Cookie.');
         
         if (!user.profileComplete) {
             return res.redirect(`${FRONTEND_URL}/profile-setup`);
@@ -497,13 +509,20 @@ export const linkedinCallback = asyncHandler(async (req, res) => {
         return res.redirect(`${FRONTEND_URL}${dashboardPath}`);
 
     } catch (error) {
-        console.error("LinkedIn Callback Error:", error);
-        return res.redirect(`${FRONTEND_URL}/login?error=server_error`);
+        // Log the exact error and redirect to login with error message
+        console.error("❌ FATAL LinkedIn Callback Error:", error.response?.data || error.message);
+        
+        let errorMessage = "LinkedIn login failed. Please check credentials or permissions.";
+        if (error.response && error.response.status === 403) {
+             errorMessage = 'Permission denied. Check your LinkedIn App scopes (OpenID, Profile, Email).';
+        }
+
+        return res.redirect(`${FRONTEND_URL}/login?error=${encodeURIComponent(errorMessage)}`);
     }
 });
 
 // =================================================================
-// 6. OTP LOGIN (Phone Number)
+// 6-8. OTP, PASSWORD RESET, USERTYPE (No changes needed)
 // =================================================================
 
 export const sendOtp = asyncHandler(async (req, res) => {

@@ -63,7 +63,7 @@ export const handleCallback = asyncHandler(async (req, res, next) => {
 
     } else if (platform === 'linkedin') {
         platformKey = 'LINKEDIN';
-        redirectUri = process.env.LINKEDIN_REDIRECT_URI; 
+        redirectUri = process.env.LINKEDIN_SOCIAL_REDIRECT_URI; 
         
         tokenData = await linkedInService.getLinkedInAccessToken(code, redirectUri);
         
