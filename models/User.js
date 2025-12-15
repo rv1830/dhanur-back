@@ -14,7 +14,6 @@ const UserSchema = new mongoose.Schema({
         lowercase: true,
         trim: true 
     },
-    // ✅ phoneNumber retained as a regular profile field (unique: false)
     phoneNumber: { 
         type: String, 
         trim: true 
@@ -24,7 +23,7 @@ const UserSchema = new mongoose.Schema({
     },
     
     // =================================================================
-    // 👤 PROFILE FIELDS (NEW)
+    // 👤 PROFILE FIELDS
     // =================================================================
     name: { 
         type: String, 
@@ -52,19 +51,19 @@ const UserSchema = new mongoose.Schema({
     },
     profileComplete: { 
         type: Boolean, 
-        default: false // 👈 Tracks if name, phone, DOB, gender are filled
+        default: false
     },
     onboardingComplete: { 
         type: Boolean, 
-        default: false // 👈 True when userType is selected
+        default: false
     },
     
     // =================================================================
-    // 🔑 OAUTH & AUTH PROVIDER
+    // 🔑 OAUTH & AUTH PROVIDER (UPDATED ENUM)
     // =================================================================
     authProvider: { 
         type: String, 
-        enum: ['LOCAL', 'GOOGLE', 'LINKEDIN', 'PHONE'], 
+        enum: ['LOCAL', 'GOOGLE', 'LINKEDIN', 'PHONE', 'FACEBOOK', 'INSTAGRAM'], 
         default: 'LOCAL' 
     },
     googleId: { 
@@ -77,6 +76,12 @@ const UserSchema = new mongoose.Schema({
         unique: true, 
         sparse: true 
     },
+    // NEW: Facebook/Meta User ID for dedicated Auth check (optional but good)
+    facebookId: { 
+        type: String, 
+        unique: true, 
+        sparse: true 
+    }, 
     
     // =================================================================
     // 🔒 SECURITY & VERIFICATION

@@ -10,8 +10,10 @@ import socialRoutes from './routes/socialRoutes.js';
 import authRoutes from './routes/authRoutes.js'; 
 import chalk from 'chalk';
 import cron from 'node-cron'; 
+// 👇 UPDATED IMPORTS
 import { runDailyYoutubeSync } from './services/youtubeService.js'; 
-import { runDailyMetaSync } from './services/metaService.js'; // 👈 NEW: Meta Sync service import करें
+import { runDailyFacebookSync } from './services/facebookService.js'; 
+import { runDailyInstagramSync } from './services/instagramService.js'; 
 
 // Middleware
 import { notFound, errorHandler } from './middleware/authMiddleware.js'; 
@@ -35,7 +37,7 @@ const app = express();
 // =============================================================
 
 app.use(helmet({
-    contentSecurityPolicy: false, 
+    contentSecurityPolicy: false, 
 }));
 
 // Cookie Parser — HTTP-only cookies ke liye zaroori
@@ -58,68 +60,81 @@ app.use(express.urlencoded({ extended: true }));
 // CORS
 const isProduction = process.env.NODE_ENV === 'production';
 const corsOptions = {
-    origin: isProduction 
-        ? ['https://dhanur.app', 'https://www.dhanur.app', 'https://dhanur-collab.vercel.app'] 
-        : ['http://localhost:3000', 'http://localhost:3001'], 
-    credentials: true, // Cookies bhejne ke liye zaroori
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+    origin: isProduction 
+        ? ['https://dhanur.app', 'https://www.dhanur.app', 'https://dhanur-collab.vercel.app'] 
+        : ['http://localhost:3000', 'http://localhost:3001'], 
+    credentials: true, 
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
 };
 app.use(cors(corsOptions));
 
 
-app.use('/api/auth', authRoutes);       
-
-// Social Connect + Sync 
-app.use('/api/social', socialRoutes);   
+app.use('/api/auth', authRoutes);       
+app.use('/api/social', socialRoutes);   
 
 // Health Check
 app.get('/api/health', (req, res) => {
-    res.json({ status: 'OK', message: 'Dhanur Backend is LIVE!', timestamp: new Date().toISOString() });
+    res.json({ status: 'OK', message: 'Dhanur Backend is LIVE!', timestamp: new Date().toISOString() });
 });
 
 app.get('/', (req, res) => {
-    res.json({ 
-        message: 'Welcome to Dhanur API', 
-        version: '2.0', 
-        docs: '/api/health' 
-    });
+    res.json({ 
+        message: 'Welcome to Dhanur API', 
+        version: '2.0', 
+        docs: '/api/health' 
+    });
 });
 
 // =============================================================
-// ⏰ NEW: CRON JOB SCHEDULER SETUP
+// ⏰ NEW: CRON JOB SCHEDULER SETUP (UPDATED)
 // =============================================================
 
 const setupCronJobs = () => {
-    // 1. YouTube Sync Job (सुबह 2:00 बजे)
-    cron.schedule('0 0 2 * * *', async () => {
-        console.log('--- [CRON] Running scheduled daily YouTube data sync (2:00 AM) ---');
-        try {
-            await runDailyYoutubeSync();
-            console.log('--- [CRON] YouTube Sync finished successfully. ---');
-        } catch (error) {
-            console.error('--- [CRON] CRITICAL FAILURE in YouTube Sync Job ---', error.message);
-        }
-    }, {
-        scheduled: true,
-        timezone: "Asia/Kolkata" 
-    });
-    console.log('✅ Daily YouTube Sync Cron Job scheduled for 2:00 AM.');
+    // 1. YouTube Sync Job (सुबह 2:00 बजे)
+    cron.schedule('0 0 2 * * *', async () => {
+        console.log('--- [CRON] Running scheduled daily YouTube data sync (2:00 AM) ---');
+        try {
+            await runDailyYoutubeSync();
+            console.log('--- [CRON] YouTube Sync finished successfully. ---');
+        } catch (error) {
+            console.error('--- [CRON] CRITICAL FAILURE in YouTube Sync Job ---', error.message);
+        }
+    }, {
+        scheduled: true,
+        timezone: "Asia/Kolkata" 
+    });
+    console.log('✅ Daily YouTube Sync Cron Job scheduled for 2:00 AM.');
 
-    // 2. Meta (FB/IG) Sync Job (सुबह 2:10 बजे) 👈 NEW
-    cron.schedule('0 10 2 * * *', async () => { 
-        console.log('--- [CRON] Running scheduled daily Meta (FB/IG) data sync (2:10 AM) ---');
-        try {
-            await runDailyMetaSync(); 
-            console.log('--- [CRON] Meta Sync finished successfully. ---');
-        } catch (error) {
-            console.error('--- [CRON] CRITICAL FAILURE in Meta Sync Job ---', error.message);
-        }
-    }, {
-        scheduled: true,
-        timezone: "Asia/Kolkata" 
-    });
-    console.log('✅ Daily Meta (FB/IG) Sync Cron Job scheduled for 2:10 AM.');
+    // 2. Facebook Sync Job (सुबह 2:10 बजे) 
+    cron.schedule('0 10 2 * * *', async () => { 
+        console.log('--- [CRON] Running scheduled daily Facebook data sync (2:10 AM) ---');
+        try {
+            await runDailyFacebookSync(); 
+            console.log('--- [CRON] Facebook Sync finished successfully. ---');
+        } catch (error) {
+            console.error('--- [CRON] CRITICAL FAILURE in Facebook Sync Job ---', error.message);
+        }
+    }, {
+        scheduled: true,
+        timezone: "Asia/Kolkata" 
+    });
+    console.log('✅ Daily Facebook Sync Cron Job scheduled for 2:10 AM.');
+
+    // 3. Instagram Sync Job (सुबह 2:20 बजे) 
+    cron.schedule('0 20 2 * * *', async () => { 
+        console.log('--- [CRON] Running scheduled daily Instagram data sync (2:20 AM) ---');
+        try {
+            await runDailyInstagramSync(); 
+            console.log('--- [CRON] Instagram Sync finished successfully. ---');
+        } catch (error) {
+            console.error('--- [CRON] CRITICAL FAILURE in Instagram Sync Job ---', error.message);
+        }
+    }, {
+        scheduled: true,
+        timezone: "Asia/Kolkata" 
+    });
+    console.log('✅ Daily Instagram Sync Cron Job scheduled for 2:20 AM.');
 };
 
 
@@ -129,17 +144,17 @@ const setupCronJobs = () => {
 const PORT = process.env.PORT || 5000;
 
 app.listen(PORT, () => {
-    const modeText = isProduction ? chalk.green.bold('PRODUCTION') : chalk.yellow.bold('DEVELOPMENT');
-    
-    console.log('============================================');
-    console.log(` 🌐 Dhanur Backend Running: ${modeText}`);
-    console.log(' 🟢 Server Status: LIVE!');
-    console.log(` 🔗 Local URL: http://localhost:${PORT}`);
-    console.log(' 🩺 Health Check: /api/health');
-    console.log('============================================');
+    const modeText = isProduction ? chalk.green.bold('PRODUCTION') : chalk.yellow.bold('DEVELOPMENT');
+    
+    console.log('============================================');
+    console.log(` 🌐 Dhanur Backend Running: ${modeText}`);
+    console.log(' 🟢 Server Status: LIVE!');
+    console.log(` 🔗 Local URL: http://localhost:${PORT}`);
+    console.log(' 🩺 Health Check: /api/health');
+    console.log('============================================');
 
-    // सर्वर शुरू होने के बाद Cron Jobs को सेट अप करें
-    setupCronJobs(); 
+    // सर्वर शुरू होने के बाद Cron Jobs को सेट अप करें
+    setupCronJobs(); 
 });
 
 // =============================================================

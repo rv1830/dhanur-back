@@ -1,4 +1,4 @@
-// models/SocialAccount.js
+// --- models/SocialAccount.js (UPDATED) ---
 import mongoose from 'mongoose';
 
 const SocialAccountSchema = mongoose.Schema({
@@ -9,6 +9,7 @@ const SocialAccountSchema = mongoose.Schema({
     },
     platform: { 
         type: String, 
+        // UPDATED ENUM: INSTAGRAM और FACEBOOK को अलग रखा
         enum: ['INSTAGRAM', 'FACEBOOK', 'LINKEDIN', 'SNAPCHAT', 'YOUTUBE', 'TWITTER'], 
         required: true 
     },
@@ -23,13 +24,13 @@ const SocialAccountSchema = mongoose.Schema({
     }, 
     tokenExpires: Date,
     
-    // --- Profile Data (from youtube.readonly) ---
-    profileName: { type: String, required: false }, // Channel Title
-    followersCount: { type: Number, default: 0 }, // Subscriber Count
+    // --- Profile Data (from API) ---
+    profileName: { type: String, required: false }, // Channel Title / Username
+    followersCount: { type: Number, default: 0 }, // Subscriber / Follower Count
     profilePictureUrl: { type: String, required: false }, 
     channelDescription: { type: String, required: false },
     
-    // --- YouTube Statistics ---
+    // --- YouTube Statistics (Generic fields kept) ---
     totalVideos: { type: Number, default: 0 }, 
     totalViews: { type: Number, default: 0 }, 
     
@@ -37,6 +38,8 @@ const SocialAccountSchema = mongoose.Schema({
     lastSynced: Date,
 
 }, { timestamps: true });
+
+SocialAccountSchema.index({ userId: 1, platform: 1 }, { unique: true });
 
 const SocialAccount = mongoose.model('SocialAccount', SocialAccountSchema);
 export default SocialAccount;

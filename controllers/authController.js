@@ -1,4 +1,4 @@
-// --- controllers/authController.js (FINAL & COMPLETE - OTP Removed) ---
+// --- controllers/authController.js (UPDATED with Meta Auth) ---
 
 import asyncHandler from 'express-async-handler';
 import bcrypt from 'bcryptjs';
@@ -9,34 +9,34 @@ import { OAuth2Client } from 'google-auth-library';
 import nodemailer from 'nodemailer';
 import crypto from 'crypto';
 import axios from 'axios';
+import { getMetaLongLivedToken } from '../services/metaService.js'; // Import token service
 
 // =================================================================
 // ⚙️ EXTERNAL SERVICE SETUP 
 // =================================================================
 const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
+const META_BASE_URL_OAUTH = 'https://www.facebook.com/v18.0/dialog/oauth';
 
 const transporter = nodemailer.createTransport({
-    host: 'smtp.gmail.com',
-    port: 587,
-    secure: false, 
-    auth: {
-        // --- HARDCODED CREDENTIALS START ---
-        user: 'outreach@linkup.capital', 
-        pass: 'dwxi ieuy yhmq lixf', 
-        // --- HARDCODED CREDENTIALS END ---
-    },
+    host: 'smtp.gmail.com',
+    port: 587,
+    secure: false, 
+    auth: {
+        // --- HARDCODED CREDENTIALS START ---
+        user: 'outreach@linkup.capital', 
+        pass: 'dwxi ieuy yhmq lixf', 
+        // --- HARDCODED CREDENTIALS END ---
+    },
 });
 
-// 🔎 Debugging: Check if transporter is ready (Optional but recommended)
 transporter.verify((error, success) => {
-    if (error) {
-        console.error("❌ SMTP Transporter Verification Failed:", error.message);
-        console.error("   -> Check the hardcoded App Password.");
-    } else {
-        console.log("✅ SMTP Transporter Ready. (Using Hardcoded Auth)");
-    }
+    if (error) {
+        console.error("❌ SMTP Transporter Verification Failed:", error.message);
+        console.error("   -> Check the hardcoded App Password.");
+    } else {
+        console.log("✅ SMTP Transporter Ready. (Using Hardcoded Auth)");
+    }
 });
-
 
 const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:3000';
 
@@ -45,105 +45,105 @@ const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:3000';
 // =================================================================
 
 export const registerUser = asyncHandler(async (req, res) => {
-    const { email, password } = req.body;
-    
-    if (!email || !password) {
-        res.status(400); 
-        throw new Error('Please provide email and password.');
-    }
-    
-    const userExists = await User.findOne({ email: email.toLowerCase().trim() });
-    if (userExists) {
-        res.status(400); 
-        throw new Error('User already exists');
-    }
-    
-    const hashedPassword = await bcrypt.hash(password, 12);
-    const user = await User.create({ 
-        email: email.toLowerCase().trim(), 
-        password: hashedPassword, 
-        userType: null,
-        profileComplete: false, 
-        onboardingComplete: false,
-        authProvider: 'LOCAL' 
-    });
-    
-    setTokenCookie(res, user); 
-    res.status(201).json({ 
-        _id: user._id, 
-        email: user.email, 
-        userType: user.userType,
-        profileComplete: user.profileComplete,
-        onboardingComplete: user.onboardingComplete, 
-        authProvider: user.authProvider,
-        message: 'Registration successful. Please complete your profile.',
-        redirectTo: '/profile-setup'
-    });
+    const { email, password } = req.body;
+    
+    if (!email || !password) {
+        res.status(400); 
+        throw new Error('Please provide email and password.');
+    }
+    
+    const userExists = await User.findOne({ email: email.toLowerCase().trim() });
+    if (userExists) {
+        res.status(400); 
+        throw new Error('User already exists');
+    }
+    
+    const hashedPassword = await bcrypt.hash(password, 12);
+    const user = await User.create({ 
+        email: email.toLowerCase().trim(), 
+        password: hashedPassword, 
+        userType: null,
+        profileComplete: false, 
+        onboardingComplete: false,
+        authProvider: 'LOCAL' 
+    });
+    
+    setTokenCookie(res, user); 
+    res.status(201).json({ 
+        _id: user._id, 
+        email: user.email, 
+        userType: user.userType,
+        profileComplete: user.profileComplete,
+        onboardingComplete: user.onboardingComplete, 
+        authProvider: user.authProvider,
+        message: 'Registration successful. Please complete your profile.',
+        redirectTo: '/profile-setup'
+    });
 });
 
 export const authUser = asyncHandler(async (req, res) => {
-    const { email, password } = req.body;
-    
-    const user = await User.findOne({ email: email.toLowerCase().trim() });
-    if (!user || !user.password) {
-        res.status(401); 
-        throw new Error('Invalid email or password');
-    }
-    
-    const isMatch = await user.matchPassword(password);
-    
-    if (isMatch) {
-        setTokenCookie(res, user); 
-        
-        if (!user.profileComplete) {
-            return res.json({ 
-                _id: user._id, 
-                email: user.email, 
-                name: user.name,
-                userType: user.userType,
-                profileComplete: user.profileComplete,
-                onboardingComplete: user.onboardingComplete,
-                authProvider: user.authProvider,
-                message: 'Login successful. Please complete your profile.',
-                redirectTo: '/profile-setup'
-            });
-        }
-        
-        if (user.userType === null) {
-            return res.json({ 
-                _id: user._id, 
-                email: user.email, 
-                name: user.name,
-                userType: user.userType,
-                profileComplete: user.profileComplete,
-                onboardingComplete: user.onboardingComplete,
-                authProvider: user.authProvider,
-                message: 'Login successful. Please select user type.',
-                redirectTo: '/select-usertype'
-            });
-        }
+    const { email, password } = req.body;
+    
+    const user = await User.findOne({ email: email.toLowerCase().trim() });
+    if (!user || !user.password) {
+        res.status(401); 
+        throw new Error('Invalid email or password');
+    }
+    
+    const isMatch = await user.matchPassword(password);
+    
+    if (isMatch) {
+        setTokenCookie(res, user); 
+        
+        if (!user.profileComplete) {
+            return res.json({ 
+                _id: user._id, 
+                email: user.email, 
+                name: user.name,
+                userType: user.userType,
+                profileComplete: user.profileComplete,
+                onboardingComplete: user.onboardingComplete,
+                authProvider: user.authProvider,
+                message: 'Login successful. Please complete your profile.',
+                redirectTo: '/profile-setup'
+            });
+        }
+        
+        if (user.userType === null) {
+            return res.json({ 
+                _id: user._id, 
+                email: user.email, 
+                name: user.name,
+                userType: user.userType,
+                profileComplete: user.profileComplete,
+                onboardingComplete: user.onboardingComplete,
+                authProvider: user.authProvider,
+                message: 'Login successful. Please select user type.',
+                redirectTo: '/select-usertype'
+            });
+        }
 
-        const dashboardPath = user.userType === 'BRAND' ? '/dashboard/brand' : 
-                             user.userType === 'INFLUENCER' ? '/dashboard/influencer' : '/dashboard';
-        
-        res.json({ 
-            _id: user._id, 
-            email: user.email, 
-            name: user.name,
-            phoneNumber: user.phoneNumber,
-            dateOfBirth: user.dateOfBirth,
-            gender: user.gender,
-            userType: user.userType,
-            profileComplete: user.profileComplete,
-            onboardingComplete: user.onboardingComplete,
-            authProvider: user.authProvider,
-            message: 'Login successful',
-            redirectTo: dashboardPath
-        });
-    } else {
-        res.status(401); 
-        throw new Error('Invalid email or password');
-    }
+        const dashboardPath = user.userType === 'BRAND' ? '/dashboard/brand' : 
+                             user.userType === 'INFLUENCER' ? '/dashboard/influencer' : '/dashboard';
+        
+        res.json({ 
+            _id: user._id, 
+            email: user.email, 
+            name: user.name,
+            phoneNumber: user.phoneNumber,
+            dateOfBirth: user.dateOfBirth,
+            gender: user.gender,
+            userType: user.userType,
+            profileComplete: user.profileComplete,
+            onboardingComplete: user.onboardingComplete,
+            authProvider: user.authProvider,
+            message: 'Login successful',
+            redirectTo: dashboardPath
+        });
+    } else {
+        res.status(401); 
+        throw new Error('Invalid email or password');
+    }
 });
 
 // =================================================================
@@ -151,51 +151,52 @@ export const authUser = asyncHandler(async (req, res) => {
 // =================================================================
 
 export const logoutUser = asyncHandler(async (req, res) => {
-    if (req.user) { await invalidateSession(req.user._id); }
-    res.clearCookie('token', cookieOptions); 
-    res.status(200).json({ message: 'Logged out successfully' });
+    if (req.user) { await invalidateSession(req.user._id); }
+    res.clearCookie('token', cookieOptions); 
+    res.status(200).json({ message: 'Logged out successfully' });
 });
 
 export const changePassword = asyncHandler(async (req, res) => {
-    const { oldPassword, newPassword } = req.body;
-    const user = req.user;
-    
-    if (!oldPassword || !newPassword) { 
-        res.status(400); 
-        throw new Error('Please provide old and new password.'); 
-    }
-    
-    if (!await user.matchPassword(oldPassword)) { 
-        res.status(401); 
-        throw new Error('Invalid old password'); 
-    }
-    
-    user.password = await bcrypt.hash(newPassword, 12);
-    await user.save();
-    await invalidateSession(user._id);
-    res.clearCookie('token', cookieOptions);
-    res.status(200).json({ message: 'Password changed successfully. Please log in again.' });
+    const { oldPassword, newPassword } = req.body;
+    const user = req.user;
+    
+    if (!oldPassword || !newPassword) { 
+        res.status(400); 
+        throw new Error('Please provide old and new password.'); 
+    }
+    
+    if (!await user.matchPassword(oldPassword)) { 
+        res.status(401); 
+        throw new Error('Invalid old password'); 
+    }
+    
+    user.password = await bcrypt.hash(newPassword, 12);
+    await user.save();
+    await invalidateSession(user._id);
+    res.clearCookie('token', cookieOptions);
+    res.status(200).json({ message: 'Password changed successfully. Please log in again.' });
 });
 
 export const checkAuthStatus = asyncHandler(async (req, res) => {
-    res.status(200).json({
-        isAuthenticated: true,
-        user: { 
-            _id: req.user._id, 
-            email: req.user.email, 
-            name: req.user.name,
-            phoneNumber: req.user.phoneNumber,
-            dateOfBirth: req.user.dateOfBirth,
-            gender: req.user.gender,
-            profilePicture: req.user.profilePicture,
-            userType: req.user.userType,
-            profileComplete: req.user.profileComplete, 
-            onboardingComplete: req.user.onboardingComplete,
-            authProvider: req.user.authProvider,
-            googleId: req.user.googleId || null,
-            linkedinId: req.user.linkedinId || null,
-        },
-    });
+    res.status(200).json({
+        isAuthenticated: true,
+        user: { 
+            _id: req.user._id, 
+            email: req.user.email, 
+            name: req.user.name,
+            phoneNumber: req.user.phoneNumber,
+            dateOfBirth: req.user.dateOfBirth,
+            gender: req.user.gender,
+            profilePicture: req.user.profilePicture,
+            userType: req.user.userType,
+            profileComplete: req.user.profileComplete, 
+            onboardingComplete: req.user.onboardingComplete,
+            authProvider: req.user.authProvider,
+            googleId: req.user.googleId || null,
+            linkedinId: req.user.linkedinId || null,
+            facebookId: req.user.facebookId || null, // NEW
+        },
+    });
 });
 
 // =================================================================
@@ -203,60 +204,60 @@ export const checkAuthStatus = asyncHandler(async (req, res) => {
 // =================================================================
 
 export const setupProfile = asyncHandler(async (req, res) => {
-    const userId = req.user._id;
-    const { name, phoneNumber, dateOfBirth, gender } = req.body; 
+    const userId = req.user._id;
+    const { name, phoneNumber, dateOfBirth, gender } = req.body; 
 
-    if (!name || !phoneNumber || !dateOfBirth || !gender) {
-        res.status(400);
-        throw new Error('All fields are required: name, phoneNumber, dateOfBirth, gender');
-    }
+    if (!name || !phoneNumber || !dateOfBirth || !gender) {
+        res.status(400);
+        throw new Error('All fields are required: name, phoneNumber, dateOfBirth, gender');
+    }
 
-    const validGenders = ['MALE', 'FEMALE', 'OTHER'];
-    if (!validGenders.includes(gender)) {
-        res.status(400);
-        throw new Error('Invalid gender. Must be MALE, FEMALE, or OTHER.');
-    }
+    const validGenders = ['MALE', 'FEMALE', 'OTHER'];
+    if (!validGenders.includes(gender)) {
+        res.status(400);
+        throw new Error('Invalid gender. Must be MALE, FEMALE, or OTHER.');
+    }
 
-    // ✅ Phone number validation
-    const phoneRegex = /^[+]?[\d\s\-()]+$/;
-    if (!phoneRegex.test(phoneNumber)) {
-        res.status(400);
-        throw new Error('Invalid phone number format.');
-    }
+    // ✅ Phone number validation
+    const phoneRegex = /^[+]?[\d\s\-()]+$/;
+    if (!phoneRegex.test(phoneNumber)) {
+        res.status(400);
+        throw new Error('Invalid phone number format.');
+    }
 
-    const dob = new Date(dateOfBirth);
-    if (isNaN(dob.getTime())) {
-        res.status(400);
-        throw new Error('Invalid date format for date of birth.');
-    }
+    const dob = new Date(dateOfBirth);
+    if (isNaN(dob.getTime())) {
+        res.status(400);
+        throw new Error('Invalid date format for date of birth.');
+    }
 
-    const user = req.user;
+    const user = req.user;
 
-    user.name = name.trim();
-    user.phoneNumber = phoneNumber.trim();
-    user.dateOfBirth = dob;
-    user.gender = gender;
-    user.profileComplete = true;
+    user.name = name.trim();
+    user.phoneNumber = phoneNumber.trim();
+    user.dateOfBirth = dob;
+    user.gender = gender;
+    user.profileComplete = true;
 
-    await user.save();
+    await user.save();
 
-    setTokenCookie(res, user);
+    setTokenCookie(res, user);
 
-    res.status(200).json({
-        message: 'Profile setup completed successfully. Please select your user type.',
-        user: {
-             _id: user._id,
-             email: user.email,
-             name: user.name,
-             phoneNumber: user.phoneNumber,
-             dateOfBirth: user.dateOfBirth,
-             gender: user.gender,
-             profileComplete: user.profileComplete,
-             userType: user.userType,
-             onboardingComplete: user.onboardingComplete
-        },
-        redirectTo: '/select-usertype'
-    });
+    res.status(200).json({
+        message: 'Profile setup completed successfully. Please select your user type.',
+        user: {
+             _id: user._id,
+             email: user.email,
+             name: user.name,
+             phoneNumber: user.phoneNumber,
+             dateOfBirth: user.dateOfBirth,
+             gender: user.gender,
+             profileComplete: user.profileComplete,
+             userType: user.userType,
+             onboardingComplete: user.onboardingComplete
+        },
+        redirectTo: '/select-usertype'
+    });
 });
 
 // =================================================================
@@ -363,19 +364,16 @@ export const googleCallback = asyncHandler(async (req, res) => {
         // 🚨 REDIRECT LOGIC
         setTokenCookie(res, user);
         
-        // 1. Profile incomplete → /profile-setup
         if (!user.profileComplete) {
             return res.redirect(`${FRONTEND_URL}/profile-setup`); 
         }
         
-        // 2. UserType null → /select-usertype
         if (user.userType === null) {
             return res.redirect(`${FRONTEND_URL}/select-usertype`); 
         }
 
-        // 3. Else → Dashboard
         let dashboardPath = user.userType === 'BRAND' ? '/dashboard/brand' : 
-                             user.userType === 'INFLUENCER' ? '/dashboard/influencer' : '/dashboard';
+                                 user.userType === 'INFLUENCER' ? '/dashboard/influencer' : '/dashboard';
         
         return res.redirect(`${FRONTEND_URL}${dashboardPath}`);
 
@@ -447,7 +445,7 @@ export const linkedinCallback = asyncHandler(async (req, res) => {
         const userEmail = email ? email.toLowerCase().trim() : null; 
         
         console.log('✅ 2. Profile Data Fetched:', { linkedinId, email: userEmail, name }); 
-
+        
         // 3. USER FIND/CREATE LOGIC
         const findQuery = { $or: [{ linkedinId }] };
         if (userEmail) {
@@ -509,7 +507,7 @@ export const linkedinCallback = asyncHandler(async (req, res) => {
         }
 
         let dashboardPath = user.userType === 'BRAND' ? '/dashboard/brand' : 
-                             user.userType === 'INFLUENCER' ? '/dashboard/influencer' : '/dashboard';
+                                 user.userType === 'INFLUENCER' ? '/dashboard/influencer' : '/dashboard';
         
         return res.redirect(`${FRONTEND_URL}${dashboardPath}`);
 
@@ -527,65 +525,169 @@ export const linkedinCallback = asyncHandler(async (req, res) => {
 
 
 // =================================================================
-// 7. PASSWORD RESET (Email)
+// 6. FACEBOOK/INSTAGRAM AUTH (NEW BLOCK)
 // =================================================================
 
-export const sendResetCode = asyncHandler(async (req, res) => {
-    const { email } = req.body;
-    const user = await User.findOne({ email: email.toLowerCase().trim() });
-
-    if (!user) {
-        return res.json({ message: 'If a matching email was found, a reset code has been sent.' });
-    }
+export const metaAuthStart = (req, res) => {
+    const { platform } = req.params; // 'facebook' or 'instagram'
+    const redirectUri = process.env.META_AUTH_REDIRECT_URI; 
     
-    const resetCode = Math.floor(100000 + Math.random() * 900000).toString();
-    const codeExpiry = Date.now() + 10 * 60 * 1000;
+    let authProviderType;
+    let scopeFinal;
+    
+    if (platform === 'facebook') {
+        authProviderType = 'FACEBOOK';
+        scopeFinal = 'email,public_profile';
+    } else if (platform === 'instagram') {
+        authProviderType = 'INSTAGRAM';
+        // We need these scopes to guarantee we get the IG Business account ID, even for primary auth.
+        scopeFinal = 'email,public_profile,pages_show_list,instagram_basic,instagram_manage_insights,pages_read_engagement'; 
+    } else {
+        res.status(400);
+        throw new Error('Invalid platform for Meta Auth.');
+    }
 
-    user.verificationCode = resetCode;
-    user.codeExpiry = codeExpiry;
-    await user.save({ validateBeforeSave: false });
+    const state = `${authProviderType}_auth:${crypto.randomBytes(8).toString('hex')}`;
+
+    const authUrl = `${META_BASE_URL_OAUTH}?` +
+        `client_id=${process.env.META_APP_ID}` +
+        `&redirect_uri=${encodeURIComponent(redirectUri)}` +
+        `&state=${state}` +
+        `&scope=${encodeURIComponent(scopeFinal)}`;
+        
+    res.redirect(authUrl);
+};
+
+
+export const metaAuthCallback = asyncHandler(async (req, res) => {
+    const { code, state } = req.query;
+
+    if (!code || !state) {
+        return res.redirect(`${FRONTEND_URL}/login?error=oauth_flow_error`);
+    }
+
+    const stateParts = state.toString().split(':');
+    const authProviderType = stateParts[0].split('_')[0]; // 'FACEBOOK' or 'INSTAGRAM'
+
+    const redirectUri = process.env.META_AUTH_REDIRECT_URI;
+    let user;
 
     try {
-        await transporter.sendMail({
-            to: user.email,
-            subject: 'Password Reset Code for Dhanur',
-            from: `"Dhanur App" <${process.env.EMAIL_USER}>`, 
-            html: `Your password reset code is <strong>${resetCode}</strong>. It expires in 10 minutes.`,
-        });
+        // 1. Get User/Long Lived Token Info
+        const tokenData = await getMetaLongLivedToken(code, redirectUri);
+        const { longLivedToken, fbUserId, userEmail, userName, profilePicture } = tokenData;
 
-        res.json({ message: 'Password reset code sent to your email.' });
+        if (!fbUserId || !userEmail) {
+            return res.redirect(`${FRONTEND_URL}/login?error=meta_data_missing`);
+        }
+
+        // 2. Find/Create User Logic: Find by Facebook ID or Email
+        const findQuery = { $or: [{ facebookId: fbUserId }] };
+        if (userEmail) {
+            findQuery.$or.push({ email: userEmail });
+        }
+        user = await User.findOne(findQuery);
+        
+        if (!user) {
+            // New User Registration
+            user = await User.create({ 
+                email: userEmail, 
+                name: userName,
+                facebookId: fbUserId, 
+                profilePicture: profilePicture,
+                userType: null, 
+                profileComplete: false,
+                onboardingComplete: false, 
+                authProvider: authProviderType, // FACEBOOK or INSTAGRAM
+            });
+        } else {
+            // Existing user: Link FB ID if missing and update provider if changing from LOCAL
+            if (!user.facebookId) {
+                user.facebookId = fbUserId;
+                user.authProvider = authProviderType;
+                if (!user.name) user.name = userName;
+                if (!user.profilePicture) user.profilePicture = profilePicture;
+                await user.save();
+            }
+        }
+
+        // 3. REDIRECT LOGIC
+        setTokenCookie(res, user);
+        
+        if (!user.profileComplete) {
+            return res.redirect(`${FRONTEND_URL}/profile-setup`); 
+        }
+        if (user.userType === null) {
+            return res.redirect(`${FRONTEND_URL}/select-usertype`); 
+        }
+
+        let dashboardPath = user.userType === 'BRAND' ? '/dashboard/brand' : 
+                                 user.userType === 'INFLUENCER' ? '/dashboard/influencer' : '/dashboard';
+        
+        return res.redirect(`${FRONTEND_URL}${dashboardPath}`);
+
     } catch (error) {
-        console.error("Email send error:", error);
-        res.status(500);
-        throw new Error('Error sending reset code email.');
+        console.error("Meta Auth Callback Error:", error.response?.data || error.message);
+        return res.redirect(`${FRONTEND_URL}/login?error=server_error_meta`);
     }
 });
 
+export const sendResetCode = asyncHandler(async (req, res) => {
+    const { email } = req.body;
+    const user = await User.findOne({ email: email.toLowerCase().trim() });
+
+    if (!user) {
+        return res.json({ message: 'If a matching email was found, a reset code has been sent.' });
+    }
+    
+    const resetCode = Math.floor(100000 + Math.random() * 900000).toString();
+    const codeExpiry = Date.now() + 10 * 60 * 1000;
+
+    user.verificationCode = resetCode;
+    user.codeExpiry = codeExpiry;
+    await user.save({ validateBeforeSave: false });
+
+    try {
+        await transporter.sendMail({
+            to: user.email,
+            subject: 'Password Reset Code for Dhanur',
+            from: `"Dhanur App" <${process.env.EMAIL_USER}>`, 
+            html: `Your password reset code is <strong>${resetCode}</strong>. It expires in 10 minutes.`,
+        });
+
+        res.json({ message: 'Password reset code sent to your email.' });
+    } catch (error) {
+        console.error("Email send error:", error);
+        res.status(500);
+        throw new Error('Error sending reset code email.');
+    }
+});
+
 export const resetPassword = asyncHandler(async (req, res) => {
-    const { email, resetCode, newPassword } = req.body;
-    const user = await User.findOne({ email: email.toLowerCase().trim() });
+    const { email, resetCode, newPassword } = req.body;
+    const user = await User.findOne({ email: email.toLowerCase().trim() });
 
-    if (!user || 
-        user.verificationCode !== resetCode || 
-        user.codeExpiry < Date.now()) 
-    {
-        res.status(400);
-        throw new Error('Invalid or expired reset code.');
-    }
-    
-    if (!newPassword || newPassword.length < 6) {
-        res.status(400);
-        throw new Error('New password must be at least 6 characters.');
-    }
+    if (!user || 
+        user.verificationCode !== resetCode || 
+        user.codeExpiry < Date.now()) 
+    {
+        res.status(400);
+        throw new Error('Invalid or expired reset code.');
+    }
+    
+    if (!newPassword || newPassword.length < 6) {
+        res.status(400);
+        throw new Error('New password must be at least 6 characters.');
+    }
 
-    user.password = await bcrypt.hash(newPassword, 12);
-    user.verificationCode = undefined;
-    user.codeExpiry = undefined;
-    await user.save();
-    
-    await invalidateSession(user._id);
-    
-    res.status(200).json({ message: 'Password has been reset successfully. Please login.' });
+    user.password = await bcrypt.hash(newPassword, 12);
+    user.verificationCode = undefined;
+    user.codeExpiry = undefined;
+    await user.save();
+    
+    await invalidateSession(user._id);
+    
+    res.status(200).json({ message: 'Password has been reset successfully. Please login.' });
 });
 
 // =================================================================
@@ -593,57 +695,57 @@ export const resetPassword = asyncHandler(async (req, res) => {
 // =================================================================
 
 export const selectUserType = asyncHandler(async (req, res) => {
-    const userId = req.user._id;
-    const { userType } = req.body;
+    const userId = req.user._id;
+    const { userType } = req.body;
 
-    const validTypes = ['BRAND', 'INFLUENCER'];
-    if (!userType || !validTypes.includes(userType)) {
-        res.status(400); 
-        throw new Error('Invalid user type. Must be BRAND or INFLUENCER.');
-    }
+    const validTypes = ['BRAND', 'INFLUENCER'];
+    if (!userType || !validTypes.includes(userType)) {
+        res.status(400); 
+        throw new Error('Invalid user type. Must be BRAND or INFLUENCER.');
+    }
 
-    const user = req.user;
+    const user = req.user;
 
-    // 🛡️ Profile complete check
-    if (!user.profileComplete) {
-        res.status(400);
-        throw new Error('Please complete your profile first before selecting user type.');
-    }
+    // 🛡️ Profile complete check
+    if (!user.profileComplete) {
+        res.status(400);
+        throw new Error('Please complete your profile first before selecting user type.');
+    }
 
-    // 🛡️ Conflict check
-    if (user.userType && user.userType !== userType) {
-        res.status(400);
-        throw new Error(`Conflict: You are already registered as ${user.userType}. Cannot change to both.`);
-    }
+    // 🛡️ Conflict check
+    if (user.userType && user.userType !== userType) {
+        res.status(400);
+        throw new Error(`Conflict: You are already registered as ${user.userType}. Cannot change to both.`);
+    }
 
-    // Update user
-    if (!user.userType) {
-        user.userType = userType;
-        user.onboardingComplete = true;
-        await user.save();
-        
-        setTokenCookie(res, user); 
-    } else if (user.userType === userType && !user.onboardingComplete) {
-        user.onboardingComplete = true;
-        await user.save();
-        setTokenCookie(res, user); 
-    }
-    
-    let dashboardPath = user.userType === 'BRAND' ? '/dashboard/brand' : '/dashboard/influencer';
-    
-    res.status(200).json({
-        message: `User type set to ${user.userType}. Onboarding complete.`,
-        user: { 
-            _id: user._id, 
-            email: user.email,
-            name: user.name,
-            phoneNumber: user.phoneNumber, // ✅ INCLUDED
-            dateOfBirth: user.dateOfBirth,
-            gender: user.gender,
-            userType: user.userType, 
-            profileComplete: user.profileComplete,
-            onboardingComplete: user.onboardingComplete
-        },
-        redirectTo: dashboardPath
-    });
+    // Update user
+    if (!user.userType) {
+        user.userType = userType;
+        user.onboardingComplete = true;
+        await user.save();
+        
+        setTokenCookie(res, user); 
+    } else if (user.userType === userType && !user.onboardingComplete) {
+        user.onboardingComplete = true;
+        await user.save();
+        setTokenCookie(res, user); 
+    }
+    
+    let dashboardPath = user.userType === 'BRAND' ? '/dashboard/brand' : '/dashboard/influencer';
+    
+    res.status(200).json({
+        message: `User type set to ${user.userType}. Onboarding complete.`,
+        user: { 
+            _id: user._id, 
+            email: user.email,
+            name: user.name,
+            phoneNumber: user.phoneNumber, 
+            dateOfBirth: user.dateOfBirth,
+            gender: user.gender,
+            userType: user.userType, 
+            profileComplete: user.profileComplete,
+            onboardingComplete: user.onboardingComplete
+        },
+        redirectTo: dashboardPath
+    });
 });

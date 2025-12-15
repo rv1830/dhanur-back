@@ -1,3 +1,5 @@
+// --- routes/authRoutes.js (UPDATED) ---
+
 import express from 'express';
 import {
     // Basic Auth
@@ -17,6 +19,9 @@ import {
     linkedinSignup,
     linkedinLogin,
     linkedinCallback,
+    // NEW: Meta Auth
+    metaAuthStart,
+    metaAuthCallback,
     // OTP & Reset
     sendResetCode,
     resetPassword,
@@ -45,6 +50,10 @@ router.get('/linkedin/signup', linkedinSignup);
 router.get('/linkedin/login', linkedinLogin);
 router.get('/linkedin/callback', linkedinCallback);
 
+// ✅ NEW: Meta (Facebook/Instagram) Auth
+router.get('/meta/:platform/start', metaAuthStart); // platform: 'facebook' or 'instagram'
+router.get('/meta/callback', metaAuthCallback); 
+
 // ✅ Password Reset
 router.post('/reset/send', sendResetCode);
 router.post('/reset', resetPassword);
@@ -56,7 +65,7 @@ router.post('/logout', protect, logoutUser);
 router.post('/change-password', protect, changePassword);
 router.get('/check-status', protect, checkAuthStatus);
 
-// ✅ NEW: Profile Setup Route (Step 1 after signup)
+// ✅ Profile Setup Route (Step 1 after signup)
 router.post('/profile-setup', protect, setupProfile);
 
 // ✅ User Type Selection (Step 2 after profile setup)
