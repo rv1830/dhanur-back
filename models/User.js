@@ -14,10 +14,10 @@ const UserSchema = new mongoose.Schema({
         lowercase: true,
         trim: true 
     },
+    // ✅ phoneNumber retained as a regular profile field (unique: false)
     phoneNumber: { 
         type: String, 
-        unique: true, 
-        sparse: true 
+        trim: true 
     },
     password: { 
         type: String 

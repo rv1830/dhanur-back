@@ -18,8 +18,6 @@ import {
     linkedinLogin,
     linkedinCallback,
     // OTP & Reset
-    sendOtp,
-    verifyOtp,
     sendResetCode,
     resetPassword,
     // User Type Selection
@@ -46,10 +44,6 @@ router.get('/google/callback', googleCallback);
 router.get('/linkedin/signup', linkedinSignup);
 router.get('/linkedin/login', linkedinLogin);
 router.get('/linkedin/callback', linkedinCallback);
-
-// ✅ OTP Login (Phone)
-router.post('/otp/send', sendOtp);
-router.post('/otp/verify', verifyOtp);
 
 // ✅ Password Reset
 router.post('/reset/send', sendResetCode);
