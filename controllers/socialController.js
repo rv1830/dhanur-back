@@ -1,10 +1,9 @@
-// controllers/socialController.js (UPDATED with new Analytics GET API)
-
 import asyncHandler from 'express-async-handler';
 
 // --- Models ---
 import SocialAccount from '../models/SocialAccount.js';
-import YouTubeAnalytics from '../models/YouTubeAnalytics.js'; // 👈 NEW: YouTubeAnalytics मॉडल इंपोर्ट करें
+import YouTubeAnalytics from '../models/YouTubeAnalytics.js'; 
+import MetaAnalytics from '../models/MetaAnalytics.js'; // 👈 NEW: MetaAnalytics मॉडल इंपोर्ट करें
 
 // --- Services ---
 import * as metaService from '../services/metaService.js';
@@ -139,8 +138,10 @@ export const handleCallback = asyncHandler(async (req, res, next) => {
 
         // Trigger initial data fetch
         if (platformKey === 'INSTAGRAM') {
-            await metaService.fetchAndStoreInstagramInsights(account);
+            // Initial fetch and store of profile data + daily insights
+            await metaService.fetchAndStoreInstagramInsights(account); 
         } else if (platformKey === 'FACEBOOK') {
+            // Initial fetch and store of profile data + daily insights
             await metaService.fetchAndStoreFacebookInsights(account);
         } else if (platformKey === 'LINKEDIN') {
              await linkedInService.fetchAndStoreLinkedInInsights(account);
@@ -251,7 +252,7 @@ export const getSocialAccountDetails = asyncHandler(async (req, res) => {
 
 
 // =================================================================
-// 📈 getYouTubeAnalyticsData: Fetches YouTube KPI Data (PROTECTED) 👈 NEW API
+// 📈 getYouTubeAnalyticsData: Fetches YouTube KPI Data (PROTECTED)
 // =================================================================
 
 /**
@@ -301,7 +302,66 @@ export const getYouTubeAnalyticsData = asyncHandler(async (req, res) => {
 
 
 // =================================================================
-// 🗑️ disconnectSocialAccount: Removes Account Connection (PROTECTED) 👈 NEW API
+// 📈 getMetaAnalyticsData: Fetches Meta KPI Data (PROTECTED) 👈 NEW API
+// =================================================================
+
+/**
+ * @desc    Fetches stored Meta Analytics data (KPIs) for connected account (FB/IG)
+ * @route   GET /api/social/analytics/:platform
+ * @access  Private 
+ */
+export const getMetaAnalyticsData = asyncHandler(async (req, res) => {
+    const { platform } = req.params;
+    const userId = req.user._id;
+
+    const platformKey = platform.toUpperCase();
+    if (platformKey !== 'FACEBOOK' && platformKey !== 'INSTAGRAM') {
+        res.status(400);
+        throw new Error('Invalid platform for Meta Analytics.');
+    }
+
+    // 1. Find the Social Account ID
+    const socialAccount = await SocialAccount.findOne({ userId, platform: platformKey });
+
+    if (!socialAccount) {
+        res.status(404);
+        throw new Error(`${platformKey} account not connected.`);
+    }
+    
+    // 2. Fetch stored Analytics data for that socialAccountId (e.g., last 90 days)
+    const analyticsData = await MetaAnalytics.find({ 
+        socialAccountId: socialAccount._id 
+    })
+    .sort({ date: -1 }) // Sort by descending date (newest first)
+    .limit(90); // Fetch last 90 days of data
+
+    // 3. Prepare the response
+    const formattedData = analyticsData.map(data => ({
+        date: data.date.toISOString().split('T')[0], // YYYY-MM-DD format
+        // Instagram Metrics
+        reach: data.reach,
+        impressions: data.impressions,
+        profileViews: data.profileViews,
+        engagement: data.engagement,
+        postReactions: data.postReactions,
+        // Facebook Metrics
+        pageImpressions: data.pageImpressions,
+        pageEngagedUsers: data.pageEngagedUsers,
+        pageViewsTotal: data.pageViewsTotal,
+    }));
+
+    res.json({
+        success: true,
+        profileName: socialAccount.profileName,
+        platform: platformKey,
+        totalRecords: formattedData.length,
+        data: formattedData,
+    });
+});
+
+
+// =================================================================
+// 🗑️ disconnectSocialAccount: Removes Account Connection (PROTECTED) 👈 UPDATED API
 // =================================================================
 
 /**
@@ -330,14 +390,18 @@ export const disconnectSocialAccount = asyncHandler(async (req, res) => {
         return;
     }
     
-    // 2. Analytics Data Clean-up (YouTube के लिए)
+    // 2. Analytics Data Clean-up 
     if (platformKey === 'YOUTUBE') {
         const deleteResult = await YouTubeAnalytics.deleteMany({ 
             socialAccountId: deletedAccount._id 
         });
         console.log(`[CLEANUP] Deleted ${deleteResult.deletedCount} YouTube Analytics records for ${platformKey}.`);
-    } 
-    // Note: यदि अन्य Analytics मॉडल हैं, तो उनके लिए भी clean-up logic यहाँ जोड़ें।
+    } else if (platformKey === 'INSTAGRAM' || platformKey === 'FACEBOOK') { // 👈 UPDATED: Meta Clean-up
+        const deleteResult = await MetaAnalytics.deleteMany({ 
+            socialAccountId: deletedAccount._id 
+        });
+        console.log(`[CLEANUP] Deleted ${deleteResult.deletedCount} Meta Analytics records for ${platformKey}.`);
+    }
 
     res.json({
         success: true,

@@ -1,5 +1,3 @@
-// server.js (UPDATED with node-cron setup)
-
 import express from 'express';
 import dotenv from 'dotenv';
 import path from 'path'; 
@@ -11,8 +9,9 @@ import connectDB from './config/db.js';
 import socialRoutes from './routes/socialRoutes.js';
 import authRoutes from './routes/authRoutes.js'; 
 import chalk from 'chalk';
-import cron from 'node-cron'; // 👈 NEW: cron library import करें
-import { runDailyYoutubeSync } from './services/youtubeService.js'; // 👈 NEW: Sync service import करें
+import cron from 'node-cron'; 
+import { runDailyYoutubeSync } from './services/youtubeService.js'; 
+import { runDailyMetaSync } from './services/metaService.js'; // 👈 NEW: Meta Sync service import करें
 
 // Middleware
 import { notFound, errorHandler } from './middleware/authMiddleware.js'; 
@@ -92,10 +91,7 @@ app.get('/', (req, res) => {
 // =============================================================
 
 const setupCronJobs = () => {
-    // हर दिन सुबह 2:00 बजे (02:00) पर Sync चलाएं।
-    // Cron Format: [second] [minute] [hour] [day of month] [month] [day of week]
-    
-    // आप यहाँ अपने टाइमज़ोन के अनुसार समय बदल सकते हैं।
+    // 1. YouTube Sync Job (सुबह 2:00 बजे)
     cron.schedule('0 0 2 * * *', async () => {
         console.log('--- [CRON] Running scheduled daily YouTube data sync (2:00 AM) ---');
         try {
@@ -106,10 +102,24 @@ const setupCronJobs = () => {
         }
     }, {
         scheduled: true,
-        timezone: "Asia/Kolkata" // 👉 इसे अपनी टाइम ज़ोन में बदल लें
+        timezone: "Asia/Kolkata" 
     });
-    
     console.log('✅ Daily YouTube Sync Cron Job scheduled for 2:00 AM.');
+
+    // 2. Meta (FB/IG) Sync Job (सुबह 2:10 बजे) 👈 NEW
+    cron.schedule('0 10 2 * * *', async () => { 
+        console.log('--- [CRON] Running scheduled daily Meta (FB/IG) data sync (2:10 AM) ---');
+        try {
+            await runDailyMetaSync(); 
+            console.log('--- [CRON] Meta Sync finished successfully. ---');
+        } catch (error) {
+            console.error('--- [CRON] CRITICAL FAILURE in Meta Sync Job ---', error.message);
+        }
+    }, {
+        scheduled: true,
+        timezone: "Asia/Kolkata" 
+    });
+    console.log('✅ Daily Meta (FB/IG) Sync Cron Job scheduled for 2:10 AM.');
 };
 
 
@@ -129,7 +139,7 @@ app.listen(PORT, () => {
     console.log('============================================');
 
     // सर्वर शुरू होने के बाद Cron Jobs को सेट अप करें
-    setupCronJobs(); // 👈 Cron Job यहाँ से शुरू होगा
+    setupCronJobs(); 
 });
 
 // =============================================================
