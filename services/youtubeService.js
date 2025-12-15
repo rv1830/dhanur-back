@@ -1,9 +1,9 @@
-// services/youtubeService.js
+// services/youtubeService.js (UPDATED with runDailyYoutubeSync for Cron)
 
 import axios from 'axios';
 import moment from 'moment'; 
 import SocialAccount from '../models/SocialAccount.js';
-import YouTubeAnalytics from '../models/YouTubeAnalytics.js'; // Ensure this model exists and is imported
+import YouTubeAnalytics from '../models/YouTubeAnalytics.js'; 
 
 const YOUTUBE_BASE_URL = 'https://www.googleapis.com/youtube/v3';
 const YOUTUBE_ANALYTICS_URL = 'https://youtubeanalytics.googleapis.com/v2';
@@ -112,7 +112,6 @@ export const getYoutubeAuthData = async (code, redirectUri) => {
 
 /**
  * Fetches time-series KPI data using the YouTube Analytics API and stores it in YouTubeAnalytics model.
- * FIX: Uses the correct metric name and removes the failing monetary API call.
  */
 export const fetchAndStoreYoutubeKPIs = async (socialAccount) => {
     console.log(`[DEBUG] Starting fetchAndStoreYoutubeKPIs for Channel: ${socialAccount.platformId}`);
@@ -145,8 +144,6 @@ export const fetchAndStoreYoutubeKPIs = async (socialAccount) => {
     const results = {}; 
 
     // === API CALL 1: NON-MONETARY METRICS (FIXED METRIC NAMES) ===
-    // FIX 1: 'watchTimeMinutes' changed to correct 'estimatedMinutesWatched'
-    // FIX 2: Added engagement metrics (comments, likes, shares) back, assuming they work with 'day'
     const nonMonetaryMetrics = 'views,estimatedMinutesWatched,subscribersGained,comments,likes,shares'; 
     try {
         console.log(`[DEBUG] API 1: Fetching STABLE metrics (${nonMonetaryMetrics}) from ${startDate} to ${endDate}`);
@@ -177,7 +174,7 @@ export const fetchAndStoreYoutubeKPIs = async (socialAccount) => {
                 
                 // Monetary data is explicitly set to 0 as the scope and API call are removed
                 estimatedRevenue: 0, 
-                adImpressions: 0,    
+                adImpressions: 0,     
             };
         });
     } catch (error) {
@@ -187,9 +184,6 @@ export const fetchAndStoreYoutubeKPIs = async (socialAccount) => {
     }
 
 
-    // === API CALL 2: MONETARY METRICS (REMOVED) ===
-    // This call is now REMOVED as per your request to remove monetary scopes.
-    
     // --- DB Transaction: Store Merged Data ---
     const dataToSave = Object.values(results);
     console.log(`[DEBUG] Preparing to save ${dataToSave.length} KPI records to YouTubeAnalytics table.`);
@@ -265,4 +259,46 @@ export const fetchAndStoreYoutubeProfile = async (socialAccount) => {
         console.error('!!! ERROR during Profile Stats Refresh !!!', error.response?.data || error.message);
         throw new Error("Failed to refresh YouTube profile stats.");
     }
+};
+
+
+// =================================================================
+// ⏰ NEW: CRON JOB LOGIC for ALL ACCOUNTS 👈 NEW FUNCTION
+// =================================================================
+
+/**
+ * पूरे सिस्टम में सभी कनेक्टेड YouTube अकाउंट्स के लिए KPI फ़ेच और स्टोर करता है।
+ * इसे डेली Cron Job द्वारा कॉल किया जाता है।
+ */
+export const runDailyYoutubeSync = async () => {
+    console.log('[CRON JOB] Starting Daily YouTube Sync for ALL ACCOUNTS...');
+    
+    // 1. सभी कनेक्टेड YouTube अकाउंट्स को DB से fetch करें
+    // NOTE: refreshToken को explicitely select करना आवश्यक है क्योंकि यह SocialAccount schema में select: false है।
+    const youtubeAccounts = await SocialAccount.find({ platform: 'YOUTUBE' })
+                                              .select('+refreshToken'); 
+
+    if (youtubeAccounts.length === 0) {
+        console.log('[CRON JOB] No YouTube accounts found to sync. Exiting.');
+        return { success: true, message: 'No accounts to sync.' };
+    }
+
+    let successCount = 0;
+    let failureCount = 0;
+
+    // 2. हर अकाउंट के लिए fetchAndStoreYoutubeKPIs चलाएँ
+    for (const account of youtubeAccounts) {
+        try {
+            console.log(`[CRON] Syncing Channel: ${account.profileName || account.platformId}`);
+            // यह फ़ंक्शन token refresh, KPI fetch, और DB अपडेट को अपने आप हैंडल करता है
+            await fetchAndStoreYoutubeKPIs(account); 
+            successCount++;
+        } catch (error) {
+            failureCount++;
+            console.error(`[CRON] !!! FAILED to sync channel ${account.platformId}: ${error.message}`);
+        }
+    }
+
+    console.log(`[CRON JOB] Daily YouTube Sync Finished. Success: ${successCount}, Failed: ${failureCount}`);
+    return { success: true, successCount, failureCount };
 };

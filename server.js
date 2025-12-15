@@ -1,7 +1,8 @@
-// server.js
+// server.js (UPDATED with node-cron setup)
+
 import express from 'express';
 import dotenv from 'dotenv';
-import path from 'path'; // path module को इंपोर्ट करें
+import path from 'path'; 
 import cors from 'cors';
 import cookieParser from 'cookie-parser';
 import helmet from 'helmet';
@@ -10,6 +11,9 @@ import connectDB from './config/db.js';
 import socialRoutes from './routes/socialRoutes.js';
 import authRoutes from './routes/authRoutes.js'; 
 import chalk from 'chalk';
+import cron from 'node-cron'; // 👈 NEW: cron library import करें
+import { runDailyYoutubeSync } from './services/youtubeService.js'; // 👈 NEW: Sync service import करें
+
 // Middleware
 import { notFound, errorHandler } from './middleware/authMiddleware.js'; 
 
@@ -44,13 +48,12 @@ app.use(express.urlencoded({ extended: true }));
 
 // Rate Limiting
 // const limiter = rateLimit({
-//     windowMs: 10 * 60 * 1000, // 10 minutes
-//     max: 100, 
-//     message: { error: 'Too many requests, please try again later.' },
-//     standardHeaders: true,
-//     legacyHeaders: false,
+// 	windowMs: 10 * 60 * 1000, // 10 minutes
+// 	max: 100, 
+// 	message: { error: 'Too many requests, please try again later.' },
+// 	standardHeaders: true,
+// 	legacyHeaders: false,
 // });
-
 // app.use('/api/', limiter); 
 
 // CORS
@@ -66,10 +69,10 @@ const corsOptions = {
 app.use(cors(corsOptions));
 
 
-app.use('/api/auth', authRoutes);      
+app.use('/api/auth', authRoutes);       
 
-// Social Connect + Sync (Keep if these are separate from initial auth)
-app.use('/api/social', socialRoutes);  
+// Social Connect + Sync 
+app.use('/api/social', socialRoutes);   
 
 // Health Check
 app.get('/api/health', (req, res) => {
@@ -85,13 +88,33 @@ app.get('/', (req, res) => {
 });
 
 // =============================================================
-// ERROR HANDLING 
+// ⏰ NEW: CRON JOB SCHEDULER SETUP
 // =============================================================
-app.use(notFound);
-app.use(errorHandler);
+
+const setupCronJobs = () => {
+    // हर दिन सुबह 2:00 बजे (02:00) पर Sync चलाएं।
+    // Cron Format: [second] [minute] [hour] [day of month] [month] [day of week]
+    
+    // आप यहाँ अपने टाइमज़ोन के अनुसार समय बदल सकते हैं।
+    cron.schedule('0 0 2 * * *', async () => {
+        console.log('--- [CRON] Running scheduled daily YouTube data sync (2:00 AM) ---');
+        try {
+            await runDailyYoutubeSync();
+            console.log('--- [CRON] YouTube Sync finished successfully. ---');
+        } catch (error) {
+            console.error('--- [CRON] CRITICAL FAILURE in YouTube Sync Job ---', error.message);
+        }
+    }, {
+        scheduled: true,
+        timezone: "Asia/Kolkata" // 👉 इसे अपनी टाइम ज़ोन में बदल लें
+    });
+    
+    console.log('✅ Daily YouTube Sync Cron Job scheduled for 2:00 AM.');
+};
+
 
 // =============================================================
-// 🌟 CHANGE 2: ENHANCED SERVER START LOG
+// ENHANCED SERVER START LOG
 // =============================================================
 const PORT = process.env.PORT || 5000;
 
@@ -104,4 +127,13 @@ app.listen(PORT, () => {
     console.log(` 🔗 Local URL: http://localhost:${PORT}`);
     console.log(' 🩺 Health Check: /api/health');
     console.log('============================================');
+
+    // सर्वर शुरू होने के बाद Cron Jobs को सेट अप करें
+    setupCronJobs(); // 👈 Cron Job यहाँ से शुरू होगा
 });
+
+// =============================================================
+// ERROR HANDLING 
+// =============================================================
+app.use(notFound);
+app.use(errorHandler);

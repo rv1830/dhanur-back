@@ -1,9 +1,10 @@
-// controllers/socialController.js (UPDATED WITH CORRECT REDIRECT)
+// controllers/socialController.js (UPDATED with new Analytics GET API)
 
 import asyncHandler from 'express-async-handler';
 
 // --- Models ---
 import SocialAccount from '../models/SocialAccount.js';
+import YouTubeAnalytics from '../models/YouTubeAnalytics.js'; // 👈 NEW: YouTubeAnalytics मॉडल इंपोर्ट करें
 
 // --- Services ---
 import * as metaService from '../services/metaService.js';
@@ -245,5 +246,102 @@ export const getSocialAccountDetails = asyncHandler(async (req, res) => {
         totalVideos: socialAccount.totalVideos,
         totalViews: socialAccount.totalViews,
         lastSynced: socialAccount.lastSynced,
+    });
+});
+
+
+// =================================================================
+// 📈 getYouTubeAnalyticsData: Fetches YouTube KPI Data (PROTECTED) 👈 NEW API
+// =================================================================
+
+/**
+ * @desc    Fetches stored YouTube Analytics data (KPIs) for the connected account
+ * @route   GET /api/social/analytics/youtube
+ * @access  Private (Relies on 'protect' middleware to set req.user)
+ */
+export const getYouTubeAnalyticsData = asyncHandler(async (req, res) => {
+    const userId = req.user._id;
+    const platformKey = 'YOUTUBE'; // Hardcode platform for this specific API
+
+    // 1. Find the Social Account ID
+    const socialAccount = await SocialAccount.findOne({ userId, platform: platformKey });
+
+    if (!socialAccount) {
+        res.status(404);
+        throw new Error(`YouTube account not connected.`);
+    }
+    
+    // 2. Fetch stored Analytics data for that socialAccountId (e.g., last 90 days)
+    const analyticsData = await YouTubeAnalytics.find({ 
+        socialAccountId: socialAccount._id 
+    })
+    .sort({ date: -1 }) // Sort by descending date (newest first)
+    .limit(90); // Fetch last 90 days of data
+
+    // 3. Prepare the response
+    const formattedData = analyticsData.map(data => ({
+        date: data.date.toISOString().split('T')[0], // YYYY-MM-DD format
+        views: data.views,
+        comments: data.comments,
+        likes: data.likes,
+        shares: data.shares,
+        subscribersGained: data.subscribersGained,
+        watchTimeMinutes: data.watchTimeMinutes,
+        estimatedRevenue: data.estimatedRevenue, 
+        adImpressions: data.adImpressions,
+    }));
+
+    res.json({
+        success: true,
+        channelName: socialAccount.profileName,
+        totalRecords: formattedData.length,
+        data: formattedData,
+    });
+});
+
+
+// =================================================================
+// 🗑️ disconnectSocialAccount: Removes Account Connection (PROTECTED) 👈 NEW API
+// =================================================================
+
+/**
+ * @desc    Disconnects/Deletes a social media account connection from the DB
+ * @route   DELETE /api/social/disconnect/:platform
+ * @access  Private (Relies on 'protect' middleware to set req.user)
+ */
+export const disconnectSocialAccount = asyncHandler(async (req, res) => {
+    const { platform } = req.params;
+    const userId = req.user._id;
+
+    const platformKey = platform.toUpperCase();
+
+    // 1. SocialAccount रिकॉर्ड को ढूंढें और हटाएँ
+    const deletedAccount = await SocialAccount.findOneAndDelete({ 
+        userId, 
+        platform: platformKey 
+    });
+
+    if (!deletedAccount) {
+        // यदि अकाउंट मिला ही नहीं, तो भी success status भेजें 
+        res.status(200).json({ 
+            success: true, 
+            message: `${platformKey} account was already disconnected or not found.` 
+        });
+        return;
+    }
+    
+    // 2. Analytics Data Clean-up (YouTube के लिए)
+    if (platformKey === 'YOUTUBE') {
+        const deleteResult = await YouTubeAnalytics.deleteMany({ 
+            socialAccountId: deletedAccount._id 
+        });
+        console.log(`[CLEANUP] Deleted ${deleteResult.deletedCount} YouTube Analytics records for ${platformKey}.`);
+    } 
+    // Note: यदि अन्य Analytics मॉडल हैं, तो उनके लिए भी clean-up logic यहाँ जोड़ें।
+
+    res.json({
+        success: true,
+        message: `${deletedAccount.profileName} (${platformKey}) successfully disconnected and data cleaned up.`,
+        platform: platformKey
     });
 });
