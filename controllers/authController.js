@@ -349,7 +349,7 @@ export const googleCallback = asyncHandler(async (req, res) => {
             
         } else {
             if (!user) {
-                return res.redirect(`${FRONTEND_URL}/signup?error=no_account_found`);
+                return res.redirect(`${FRONTEND_URL}/register?error=no_account_found`);
             }
 
             if (!user.googleId) {
@@ -480,7 +480,7 @@ export const linkedinCallback = asyncHandler(async (req, res) => {
             
         } else { // Login
             if (!user) {
-                return res.redirect(`${FRONTEND_URL}/signup?error=no_account_found`);
+                return res.redirect(`${FRONTEND_URL}/register?error=no_account_found`);
             }
 
             // Link existing user if logging in with email match
@@ -528,6 +528,11 @@ export const linkedinCallback = asyncHandler(async (req, res) => {
 // 6. FACEBOOK/INSTAGRAM AUTH (NEW BLOCK)
 // =================================================================
 
+// --- controllers/authController.js (FIXED metaAuthStart) ---
+
+// Note: Assuming necessary imports like asyncHandler, User, setTokenCookie, etc., are present.
+// Note: Assuming META_BASE_URL_OAUTH and FRONTEND_URL are defined in the file scope.
+
 export const metaAuthStart = (req, res) => {
     const { platform } = req.params; // 'facebook' or 'instagram'
     const redirectUri = process.env.META_AUTH_REDIRECT_URI; 
@@ -537,11 +542,14 @@ export const metaAuthStart = (req, res) => {
     
     if (platform === 'facebook') {
         authProviderType = 'FACEBOOK';
-        scopeFinal = 'email,public_profile';
+        // ✅ Facebook Auth: Only basic permissions needed.
+        scopeFinal = 'email,public_profile'; 
     } else if (platform === 'instagram') {
         authProviderType = 'INSTAGRAM';
-        // We need these scopes to guarantee we get the IG Business account ID, even for primary auth.
-        scopeFinal = 'email,public_profile,pages_show_list,instagram_basic,instagram_manage_insights,pages_read_engagement'; 
+        // 🚨 FIX: Instagram Auth should only request basic permissions (email, public_profile).
+        // The extensive scopes (pages_show_list, instagram_basic, etc.) are only required
+        // during the separate Social Connect flow to fetch analytics/page details.
+        scopeFinal = 'email,public_profile'; // FIXED to minimal scope for Auth
     } else {
         res.status(400);
         throw new Error('Invalid platform for Meta Auth.');
@@ -558,7 +566,6 @@ export const metaAuthStart = (req, res) => {
     res.redirect(authUrl);
 };
 
-
 export const metaAuthCallback = asyncHandler(async (req, res) => {
     const { code, state } = req.query;
 
@@ -574,6 +581,7 @@ export const metaAuthCallback = asyncHandler(async (req, res) => {
 
     try {
         // 1. Get User/Long Lived Token Info
+        // Note: getMetaLongLivedToken internally fetches the user's basic profile (ID, email, name)
         const tokenData = await getMetaLongLivedToken(code, redirectUri);
         const { longLivedToken, fbUserId, userEmail, userName, profilePicture } = tokenData;
 

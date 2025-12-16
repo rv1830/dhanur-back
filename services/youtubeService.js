@@ -52,8 +52,8 @@ const refreshAccessToken = async (refreshToken) => {
 export const getYoutubeAuthData = async (code, redirectUri) => {
     console.log('[DEBUG] Starting getYoutubeAuthData (Token Exchange)');
     
-    // 1. Exchange code for Access Token and Refresh Token
     try {
+        // 1. Exchange code for Access Token and Refresh Token
         const tokenRes = await axios.post('https://oauth2.googleapis.com/token', null, {
             params: {
                 code: code,
@@ -70,43 +70,68 @@ export const getYoutubeAuthData = async (code, redirectUri) => {
         const { access_token, refresh_token, expires_in } = tokenRes.data;
         console.log(`[DEBUG] Token Exchange Success. Refresh Token received: ${!!refresh_token}`);
         
-        // 2. Fetch comprehensive Channel details (using all relevant parts)
-        const channelRes = await axios.get(`${YOUTUBE_BASE_URL}/channels`, {
-            params: {
-                part: 'id,snippet,statistics,brandingSettings,contentDetails', 
-                mine: true,
-            },
-            headers: {
-                Authorization: `Bearer ${access_token}`
-            }
-        });
+        // 2. Fetch comprehensive Channel details
+        let channelRes;
+        try {
+            channelRes = await axios.get(`${YOUTUBE_BASE_URL}/channels`, {
+                params: {
+                    part: 'id,snippet,statistics,brandingSettings,contentDetails', 
+                    mine: true,
+                },
+                headers: {
+                    Authorization: `Bearer ${access_token}`
+                }
+            });
+        } catch (channelErr) {
+            console.error('!!! GOOGLE API ERROR FETCHING CHANNEL !!!', channelErr.response?.data || channelErr.message);
+            throw new Error("Google API se channel data nahi mil pa raha hai. Please permissions check karein.");
+        }
 
-        if (channelRes.data.items.length === 0) {
-            throw new Error("No YouTube channel found for the authenticated user.");
+        // 🚨 CRITICAL CHECK: User ka channel exist karta hai ya nahi?
+        if (!channelRes.data.items || channelRes.data.items.length === 0) {
+            console.warn('[WARN] No YouTube channel found for this Google account.');
+            // Is specific message ko frontend pe handle karein
+            throw new Error("NO_YOUTUBE_CHANNEL_FOUND"); 
         }
 
         const channelItem = channelRes.data.items[0];
         const stats = channelItem.statistics;
         const snippet = channelItem.snippet;
-        console.log(`[DEBUG] Channel Fetch Success. Channel ID: ${channelItem.id}, Subscribers: ${stats.subscriberCount}`);
+
+        console.log(`[DEBUG] Channel Fetch Success. Channel ID: ${channelItem.id}`);
 
         // 3. Package ALL profile data
         return { 
             accessToken: access_token, 
-            refreshToken: refresh_token, 
+            refreshToken: refresh_token, // IMPORTANT: DB mein save karna zaroori hai for daily sync
             expiresIn: expires_in, 
             
             platformId: channelItem.id, 
             profileName: snippet.title,
             followersCount: parseInt(stats.subscriberCount, 10) || 0,
-            profilePictureUrl: snippet.thumbnails.high.url,
+            profilePictureUrl: snippet.thumbnails.high?.url || snippet.thumbnails.default?.url,
             channelDescription: snippet.description,
             totalVideos: parseInt(stats.videoCount, 10) || 0,
             totalViews: parseInt(stats.viewCount, 10) || 0,
         };
+
     } catch (error) {
-        console.error('!!! ERROR DURING AUTH/CHANNEL FETCH !!!', error.response?.data || error.message);
-        throw new Error("Failed during YouTube authentication or channel fetch.");
+        // Yahan hum decide karenge ki user ko kya error message dikhana hai
+        const errorData = error.response?.data;
+        console.error('!!! YOUTUBE AUTH SERVICE ERROR !!!', errorData || error.message);
+
+        // Case 1: Agar humne manually "NO_YOUTUBE_CHANNEL_FOUND" throw kiya hai
+        if (error.message === "NO_YOUTUBE_CHANNEL_FOUND") {
+            throw new Error("No YouTube channel was found linked to this Google account. Please create a channel on YouTube and try again.");
+        }
+
+        // Case 2: Invalid Grant (Code expire ho gaya ya mismatch hai)
+        if (errorData?.error === 'invalid_grant') {
+            throw new Error("Your Session is expired Try login again");
+        }
+
+        // Case 3: Default error
+        throw new Error(error.message || "There is some technical Problem in Youtube Connection");
     }
 };
 
