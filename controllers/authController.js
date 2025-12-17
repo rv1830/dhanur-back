@@ -204,60 +204,67 @@ export const checkAuthStatus = asyncHandler(async (req, res) => {
 // =================================================================
 
 export const setupProfile = asyncHandler(async (req, res) => {
-    const userId = req.user._id;
-    const { name, phoneNumber, dateOfBirth, gender } = req.body; 
+    // 🛡️ AUTH CHECK: If session expired or no auth, redirect to login
+    if (!req.user) {
+        return res.status(401).json({ 
+            message: 'Not authorized, please login.', 
+            redirectTo: '/login' 
+        });
+    }
 
-    if (!name || !phoneNumber || !dateOfBirth || !gender) {
-        res.status(400);
-        throw new Error('All fields are required: name, phoneNumber, dateOfBirth, gender');
-    }
+    const { name, phoneNumber, dateOfBirth, gender } = req.body; 
 
-    const validGenders = ['MALE', 'FEMALE', 'OTHER'];
-    if (!validGenders.includes(gender)) {
-        res.status(400);
-        throw new Error('Invalid gender. Must be MALE, FEMALE, or OTHER.');
-    }
+    if (!name || !phoneNumber || !dateOfBirth || !gender) {
+        res.status(400);
+        throw new Error('All fields are required: name, phoneNumber, dateOfBirth, gender');
+    }
+
+    const validGenders = ['MALE', 'FEMALE', 'OTHER'];
+    if (!validGenders.includes(gender)) {
+        res.status(400);
+        throw new Error('Invalid gender. Must be MALE, FEMALE, or OTHER.');
+    }
 
     // ✅ Phone number validation
-    const phoneRegex = /^[+]?[\d\s\-()]+$/;
-    if (!phoneRegex.test(phoneNumber)) {
-        res.status(400);
-        throw new Error('Invalid phone number format.');
-    }
+    const phoneRegex = /^[+]?[\d\s\-()]+$/;
+    if (!phoneRegex.test(phoneNumber)) {
+        res.status(400);
+        throw new Error('Invalid phone number format.');
+    }
 
-    const dob = new Date(dateOfBirth);
-    if (isNaN(dob.getTime())) {
-        res.status(400);
-        throw new Error('Invalid date format for date of birth.');
-    }
+    const dob = new Date(dateOfBirth);
+    if (isNaN(dob.getTime())) {
+        res.status(400);
+        throw new Error('Invalid date format for date of birth.');
+    }
 
-    const user = req.user;
+    const user = req.user;
 
-    user.name = name.trim();
-    user.phoneNumber = phoneNumber.trim();
-    user.dateOfBirth = dob;
-    user.gender = gender;
-    user.profileComplete = true;
+    user.name = name.trim();
+    user.phoneNumber = phoneNumber.trim();
+    user.dateOfBirth = dob;
+    user.gender = gender;
+    user.profileComplete = true;
 
-    await user.save();
+    await user.save();
 
-    setTokenCookie(res, user);
+    setTokenCookie(res, user);
 
-    res.status(200).json({
-        message: 'Profile setup completed successfully. Please select your user type.',
-        user: {
-             _id: user._id,
-             email: user.email,
+    res.status(200).json({
+        message: 'Profile setup completed successfully. Please select your user type.',
+        user: {
+             _id: user._id,
+             email: user.email,
              name: user.name,
              phoneNumber: user.phoneNumber,
              dateOfBirth: user.dateOfBirth,
              gender: user.gender,
-             profileComplete: user.profileComplete,
-             userType: user.userType,
-             onboardingComplete: user.onboardingComplete
-        },
-        redirectTo: '/select-usertype'
-    });
+             profileComplete: user.profileComplete,
+             userType: user.userType,
+             onboardingComplete: user.onboardingComplete
+        },
+        redirectTo: '/select-usertype'
+    });
 });
 
 // =================================================================
@@ -703,57 +710,65 @@ export const resetPassword = asyncHandler(async (req, res) => {
 // =================================================================
 
 export const selectUserType = asyncHandler(async (req, res) => {
-    const userId = req.user._id;
-    const { userType } = req.body;
+    // 🛡️ AUTH CHECK: If session expired or no auth, redirect to login
+    if (!req.user) {
+        return res.status(401).json({ 
+            message: 'Not authorized, please login.', 
+            redirectTo: '/login' 
+        });
+    }
 
-    const validTypes = ['BRAND', 'INFLUENCER'];
-    if (!userType || !validTypes.includes(userType)) {
-        res.status(400); 
-        throw new Error('Invalid user type. Must be BRAND or INFLUENCER.');
-    }
+    const { userType } = req.body;
+    const validTypes = ['BRAND', 'INFLUENCER'];
+    
+    if (!userType || !validTypes.includes(userType)) {
+        res.status(400); 
+        throw new Error('Invalid user type. Must be BRAND or INFLUENCER.');
+    }
 
-    const user = req.user;
+    const user = req.user;
 
-    // 🛡️ Profile complete check
-    if (!user.profileComplete) {
-        res.status(400);
-        throw new Error('Please complete your profile first before selecting user type.');
-    }
+    // 🛡️ FLOW CHECK: If profile not complete, send back to setup
+    if (!user.profileComplete) {
+        return res.status(400).json({ 
+            message: 'Please complete your profile first.', 
+            redirectTo: '/profile-setup' 
+        });
+    }
 
-    // 🛡️ Conflict check
-    if (user.userType && user.userType !== userType) {
-        res.status(400);
-        throw new Error(`Conflict: You are already registered as ${user.userType}. Cannot change to both.`);
-    }
+    if (user.userType && user.userType !== userType) {
+        res.status(400);
+        throw new Error(`Conflict: You are already registered as ${user.userType}.`);
+    }
 
     // Update user
-    if (!user.userType) {
-        user.userType = userType;
-        user.onboardingComplete = true;
-        await user.save();
+    if (!user.userType) {
+        user.userType = userType;
+        user.onboardingComplete = true;
+        await user.save();
         
-        setTokenCookie(res, user); 
-    } else if (user.userType === userType && !user.onboardingComplete) {
-        user.onboardingComplete = true;
-        await user.save();
-        setTokenCookie(res, user); 
-    }
-    
-    let dashboardPath = user.userType === 'BRAND' ? '/dashboard/brand' : '/dashboard/influencer';
-    
-    res.status(200).json({
-        message: `User type set to ${user.userType}. Onboarding complete.`,
-        user: { 
-            _id: user._id, 
+        setTokenCookie(res, user); 
+    } else if (user.userType === userType && !user.onboardingComplete) {
+        user.onboardingComplete = true;
+        await user.save();
+        setTokenCookie(res, user); 
+    }
+    
+    let dashboardPath = user.userType === 'BRAND' ? '/dashboard/brand' : '/dashboard/influencer';
+    
+    res.status(200).json({
+        message: `User type set to ${user.userType}. Onboarding complete.`,
+        user: { 
+            _id: user._id, 
             email: user.email,
             name: user.name,
             phoneNumber: user.phoneNumber, 
             dateOfBirth: user.dateOfBirth,
             gender: user.gender,
-            userType: user.userType, 
-            profileComplete: user.profileComplete,
-            onboardingComplete: user.onboardingComplete
-        },
-        redirectTo: dashboardPath
-    });
+            userType: user.userType, 
+            profileComplete: user.profileComplete,
+            onboardingComplete: user.onboardingComplete
+        },
+        redirectTo: dashboardPath
+    });
 });
