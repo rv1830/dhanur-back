@@ -8,6 +8,7 @@ import rateLimit from 'express-rate-limit';
 import connectDB from './config/db.js';
 import socialRoutes from './routes/socialRoutes.js';
 import authRoutes from './routes/authRoutes.js'; 
+import brandRoutes from './routes/brandRoutes.js'
 import chalk from 'chalk';
 import cron from 'node-cron'; 
 // 👇 UPDATED IMPORTS
@@ -21,6 +22,7 @@ import { notFound, errorHandler } from './middleware/authMiddleware.js';
 // SSL Fix for Dev (LinkedIn, Google OAuth callbacks)
 import axios from 'axios';
 import https from 'https';
+import Brand from './models/Brand.js';
 const httpsAgent = new https.Agent({ rejectUnauthorized: false });
 axios.defaults.httpsAgent = httpsAgent;
 
@@ -77,7 +79,8 @@ app.use(cors(corsOptions));
 
 
 app.use('/api/auth', authRoutes);       
-app.use('/api/social', socialRoutes);   
+app.use('/api/social', socialRoutes);
+app.use('/api/brand',brandRoutes)   
 
 // Health Check
 app.get('/api/health', (req, res) => {
