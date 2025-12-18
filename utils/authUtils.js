@@ -1,29 +1,19 @@
-// utils/authUtils.js
 import jwt from 'jsonwebtoken';
 import { cookieOptions } from '../middleware/authMiddleware.js'; 
-import User from '../models/User.js'; // To access the User model for session invalidation
+import User from '../models/User.js';
 
-/**
- * Creates a JWT and sets it as an HTTP-only cookie on the response.
- * @param {object} res - Express response object.
- * @param {object} user - User document object (must have _id and tokenVersion).
- */
 export const setTokenCookie = (res, user) => {
-    // Payload should include user details and tokenVersion for revocation check
     const token = jwt.sign(
         {
-            id: user._id,
+            id: user.uid, // Clean Public ID (US-1234...)
             tokenVersion: user.tokenVersion || 0,
-            // Include userType and onboardingComplete status in payload to avoid unnecessary DB lookups 
-            // in some frontend logic (though 'protect' still does the main DB check).
             userType: user.userType,
             onboardingComplete: user.onboardingComplete || false,
         },
         process.env.JWT_SECRET,
-        { expiresIn: '30d' } // Token expiry
+        { expiresIn: '30d' }
     );
 
-    // Set token as an HTTP-only cookie
     res.cookie('token', token, cookieOptions);
 };
 

@@ -3,11 +3,13 @@ import Brand from '../models/Brand.js';
 
 export const checkBrandRole = (allowedRoles) => {
     return asyncHandler(async (req, res, next) => {
-        // brandId params se ya body se uthayein
+        // brandId params se ya body se uthayein (Frontend ab bid: BR-... bhejega)
         const brandId = req.params.brandId || req.body.brandId;
-        const userId = req.user._id;
+        const userId = req.user._id; // Internal ID for relationship check
 
-        const brand = await Brand.findById(brandId);
+        // 🚨 STABLE ID CHANGE: Find by bid (Public ID) instead of Mongo _id
+        const brand = await Brand.findOne({ bid: brandId });
+        
         if (!brand) {
             res.status(404);
             throw new Error('Brand not found');

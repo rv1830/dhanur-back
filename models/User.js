@@ -1,101 +1,64 @@
-// --- models/User.js (COMPLETE UPDATED SCHEMA) ---
-
 import mongoose from 'mongoose';
 import bcrypt from 'bcryptjs';
+import { generateUniquePublicId } from '../utils/idGenerator.js';
 
 const UserSchema = new mongoose.Schema({
     // =================================================================
     // 🔐 AUTHENTICATION FIELDS
     // =================================================================
+    uid: { type: String, unique: true, index: true }, // US-1234567890
     email: { 
         type: String, 
         unique: true, 
-        sparse: true,
-        lowercase: true,
+        sparse: true, 
+        lowercase: true, 
         trim: true 
     },
-    phoneNumber: { 
-        type: String, 
-        trim: true 
-    },
-    password: { 
-        type: String 
-    },
+    phoneNumber: { type: String, trim: true },
+    password: { type: String },
     
     // =================================================================
     // 👤 PROFILE FIELDS
     // =================================================================
-    name: { 
-        type: String, 
-        trim: true 
-    },
-    dateOfBirth: { 
-        type: Date 
-    },
+    name: { type: String, trim: true },
+    dateOfBirth: { type: Date },
     gender: { 
         type: String, 
-        enum: ['MALE', 'FEMALE', 'OTHER', null],
-        default: null
+        enum: ['MALE', 'FEMALE', 'OTHER', null], // Gender null ho sakta hai jab tak user update na kare
+        default: null 
     },
-    profilePicture: { 
-        type: String 
-    },
+    profilePicture: { type: String },
     
     // =================================================================
-    // 🎭 USER TYPE & ONBOARDING STATUS
+    // 🎭 USER TYPE (Strictly No Null)
     // =================================================================
     userType: { 
         type: String, 
-        enum: ['BRAND', 'INFLUENCER', 'ADMIN', null], 
-        default: null 
-    },
-    profileComplete: { 
-        type: Boolean, 
-        default: false
-    },
-    onboardingComplete: { 
-        type: Boolean, 
-        default: false
+        enum: ['BRAND', 'INFLUENCER', 'MEMBER', 'ADMIN'], 
+        default: 'MEMBER' // ✅ Naya user default 'MEMBER' banega
     },
     
+    profileComplete: { type: Boolean, default: false },
+    onboardingComplete: { type: Boolean, default: false },
+    
     // =================================================================
-    // 🔑 OAUTH & AUTH PROVIDER (UPDATED ENUM)
+    // 🔑 OAUTH PROVIDERS
     // =================================================================
     authProvider: { 
         type: String, 
         enum: ['LOCAL', 'GOOGLE', 'LINKEDIN', 'PHONE', 'FACEBOOK', 'INSTAGRAM'], 
         default: 'LOCAL' 
     },
-    googleId: { 
-        type: String, 
-        unique: true, 
-        sparse: true 
-    },
-    linkedinId: { 
-        type: String, 
-        unique: true, 
-        sparse: true 
-    },
-    // NEW: Facebook/Meta User ID for dedicated Auth check (optional but good)
-    facebookId: { 
-        type: String, 
-        unique: true, 
-        sparse: true 
-    }, 
+    googleId: { type: String, unique: true, sparse: true },
+    linkedinId: { type: String, unique: true, sparse: true },
+    facebookId: { type: String, unique: true, sparse: true }, 
     
     // =================================================================
     // 🔒 SECURITY & VERIFICATION
     // =================================================================
-    tokenVersion: { 
-        type: Number, 
-        default: 0 
-    },
-    verificationCode: { 
-        type: String 
-    },
-    codeExpiry: { 
-        type: Date 
-    },
+    tokenVersion: { type: Number, default: 0 },
+    verificationCode: { type: String },
+    codeExpiry: { type: Date },
     
     // =================================================================
     // 📝 ADDITIONAL PROFILE INFO
@@ -105,16 +68,18 @@ const UserSchema = new mongoose.Schema({
         companyName: { type: String },
         rateCard: { type: mongoose.Schema.Types.Mixed },
     }
-    
-}, { 
-    timestamps: true 
-});
+}, { timestamps: true });
 
-// =================================================================
-// 🔑 PASSWORD COMPARISON METHOD
-// =================================================================
+// PASSWORD MATCH METHOD
 UserSchema.methods.matchPassword = async function(password) {
     return await bcrypt.compare(password, this.password);
 };
+
+// PRE-SAVE HOOK FOR UID (Fixed: next parameter is not needed for async)
+UserSchema.pre('save', async function () {
+    if (!this.uid) {
+        this.uid = await generateUniquePublicId(this.constructor, 'USER');
+    }
+});
 
 export default mongoose.model('User', UserSchema);

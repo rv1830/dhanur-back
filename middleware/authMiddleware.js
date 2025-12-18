@@ -1,5 +1,3 @@
-// --- middleware/authMiddleware.js (FIXED) ---
-
 import jwt from 'jsonwebtoken';
 import asyncHandler from 'express-async-handler';
 import User from '../models/User.js';
@@ -23,7 +21,7 @@ console.log('🍪 Cookie Options:', {
 });
 
 // =================================================================
-// 🔒 PROTECT MIDDLEWARE
+// 🔒 PROTECT MIDDLEWARE (UPDATED FOR UID)
 // =================================================================
 export const protect = asyncHandler(async (req, res, next) => {
     console.log('\n=== 🔐 AUTH CHECK START ===');
@@ -57,20 +55,21 @@ export const protect = asyncHandler(async (req, res, next) => {
         
         console.log('✅ JWT decoded:', decoded);
         
-        // 🚨 CRITICAL FIX: Handle both 'id' and 'userId' fields
-        const userId = decoded.userId || decoded.id;
+        // 🚨 INDUSTRY FIX: 'decoded.id' mein ab hamara 'uid' (US-...) aayega
+        const publicId = decoded.userId || decoded.id;
         
-        if (!userId) {
-            console.error('❌ No userId/id in token');
+        if (!publicId) {
+            console.error('❌ No publicId (uid) in token');
             res.status(401);
             throw new Error('Invalid token format.');
         }
 
-        console.log('🔍 Finding user:', userId);
-        const user = await User.findById(userId).select('-password');
+        console.log('🔍 Finding user by UID:', publicId);
+        // MongoDB _id ke bajaye UID se search kar rahe hain
+        const user = await User.findOne({ uid: publicId }).select('-password');
 
         if (!user) {
-            console.error(`❌ User not found: ${userId}`);
+            console.error(`❌ User not found with UID: ${publicId}`);
             res.status(401);
             throw new Error('User not found.');
         }
@@ -84,7 +83,7 @@ export const protect = asyncHandler(async (req, res, next) => {
         }
 
         req.user = user;
-        console.log('✅ User authenticated:', user.email || user.phoneNumber);
+        console.log('✅ User authenticated:', user.email || user.phoneNumber || user.uid);
         console.log('=== 🔐 AUTH CHECK END (SUCCESS) ===\n');
         next();
 
@@ -127,16 +126,17 @@ export const errorHandler = (err, req, res, next) => {
 // 🛡️ ROLE-BASED ACCESS CONTROL (RBAC)
 // =================================================================
 
-// 1. Sirf Brand hi access kar paye
+// 1. Brand ya Member dono access kar payein
 export const isBrand = asyncHandler(async (req, res, next) => {
-    // req.user 'protect' middleware se aata hai
-    if (req.user && req.user.userType === 'BRAND' && req.user.onboardingComplete) {
-        console.log(`✅ Access Granted: User is a verified BRAND`);
+    const allowedBrandRoles = ['BRAND', 'MEMBER'];
+    
+    if (req.user && allowedBrandRoles.includes(req.user.userType) && req.user.onboardingComplete) {
+        console.log(`✅ Access Granted: User is a verified ${req.user.userType}`);
         next();
     } else {
-        console.error(`❌ Access Denied: User is not a BRAND or onboarding incomplete`);
-        res.status(403); // 403 means Forbidden
-        throw new Error('Access denied. This area is reserved for Brands with completed onboarding.');
+        console.error(`❌ Access Denied: User type ${req.user?.userType} unauthorized or onboarding incomplete`);
+        res.status(403); 
+        throw new Error('Access denied. Reserved for Brands/Members with completed onboarding.');
     }
 });
 
