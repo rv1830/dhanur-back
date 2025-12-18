@@ -62,12 +62,34 @@ export const createBrand = asyncHandler(async (req, res) => {
 // =================================================================
 // 2. GET ALL MY BRANDS (List for Switcher/Sidebar)
 // =================================================================
+// =================================================================
+// 2. GET ALL MY BRANDS (List with User Role & Name)
+// =================================================================
+// =================================================================
+// 2. GET ALL MY BRANDS (Fast Response: Only Name & Role)
+// =================================================================
 export const getMyBrands = asyncHandler(async (req, res) => {
-    // Current user jin brands ka member hai unki list
     const brands = await Brand.find({ "members.user": req.user._id })
-        .select('bid brandName industry'); 
+        .select('bid brandName members') 
+        .populate('members.user', 'name'); 
+    const formattedBrands = brands.map(brand => {
+        const currentUserMember = brand.members.find(
+            m => m.user._id.toString() === req.user._id.toString()
+        );
 
-    res.json({ success: true, brands });
+        return {
+            bid: brand.bid,
+            brandName: brand.brandName,
+            myRole: currentUserMember ? currentUserMember.role : null,
+            myName: req.user.name 
+        };
+    });
+
+    res.json({ 
+        success: true, 
+        count: formattedBrands.length,
+        brands: formattedBrands 
+    });
 });
 
 // =================================================================
