@@ -168,25 +168,26 @@ export const joinBrand = asyncHandler(async (req, res) => {
     if (!brand) { res.status(400); throw new Error('Invalid invitation.'); }
 
     const invite = brand.invitations.find(inv => inv.token === token);
+    
+    // Email check
     if (invite.email !== user.email) {
         res.status(403);
         throw new Error('Email mismatch.');
     }
 
+    // Sirf member list mein add karo
     brand.members.push({ user: user._id, role: invite.role });
     brand.invitations = brand.invitations.filter(i => i.token !== token);
     await brand.save();
 
-    // Agar user pehle se Admin (BRAND) nahi hai, tabhi use MEMBER set karein
-    if (user.userType !== 'BRAND') {
-        user.userType = 'MEMBER';
-    }
-    user.onboardingComplete = true;
+    // ✅ GLOBAL USER TYPE KO KUCH MAT KARO
+    // Wo null hai to null hi rehne do
+    user.onboardingComplete = true; 
     await user.save();
 
     res.json({ 
         success: true, 
-        message: `Welcome to ${brand.brandName}!`, 
-        redirectTo: `/dashboard/brand/${brand.bid}` 
+        message: `You have been added to ${brand.brandName}.`, 
+        redirectTo: user.userType === null ? '/select-usertype' : `/dashboard/brand/${brand.bid}`
     });
 });

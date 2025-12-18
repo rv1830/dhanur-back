@@ -32,10 +32,10 @@ const UserSchema = new mongoose.Schema({
     // =================================================================
     // 🎭 USER TYPE (Strictly No Null)
     // =================================================================
-    userType: { 
+   userType: { 
         type: String, 
-        enum: ['BRAND', 'INFLUENCER', 'MEMBER', 'ADMIN'], 
-        default: 'MEMBER' // ✅ Naya user default 'MEMBER' banega
+        enum: ['BRAND', 'INFLUENCER', 'ADMIN', null], // ✅ 'MEMBER' Hata diya
+        default: null // ✅ Naya user null banega
     },
     
     profileComplete: { type: Boolean, default: false },

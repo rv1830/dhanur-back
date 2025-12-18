@@ -44,9 +44,15 @@ const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:3000';
 export const registerUser = asyncHandler(async (req, res) => {
     const { email, password } = req.body;
     
+    // 1. Validation (8 characters password check)
     if (!email || !password) {
         res.status(400); 
         throw new Error('Please provide email and password.');
+    }
+
+    if (password.length < 8) {
+        res.status(400);
+        throw new Error('Password must be at least 8 characters long.');
     }
     
     const userExists = await User.findOne({ email: email.toLowerCase().trim() });
@@ -59,7 +65,7 @@ export const registerUser = asyncHandler(async (req, res) => {
     const user = await User.create({ 
         email: email.toLowerCase().trim(), 
         password: hashedPassword, 
-        userType: null,
+        userType: null, // ✅ Explicitly Null
         profileComplete: false, 
         onboardingComplete: false,
         authProvider: 'LOCAL' 
@@ -67,7 +73,7 @@ export const registerUser = asyncHandler(async (req, res) => {
     
     setTokenCookie(res, user); 
     res.status(201).json({ 
-        uid: user.uid, // Changed _id to uid
+        uid: user.uid,
         email: user.email, 
         userType: user.userType,
         profileComplete: user.profileComplete,
@@ -86,7 +92,7 @@ export const authUser = asyncHandler(async (req, res) => {
         res.status(401); 
         throw new Error('Invalid email or password');
     }
-    
+
     const isMatch = await user.matchPassword(password);
     
     if (isMatch) {
@@ -120,8 +126,9 @@ export const authUser = asyncHandler(async (req, res) => {
             });
         }
 
-        const dashboardPath = (user.userType === 'BRAND' || user.userType === 'MEMBER') ? '/dashboard/brand' : 
-                             user.userType === 'INFLUENCER' ? '/dashboard/influencer' : '/dashboard';
+const dashboardPath = user.userType === 'BRAND' 
+    ? '/dashboard/brand' 
+    : '/dashboard/influencer';
         
         res.json({ 
             uid: user.uid, // Changed _id to uid
