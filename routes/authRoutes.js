@@ -28,7 +28,7 @@ import {
     // User Type Selection
     selectUserType,
 } from '../controllers/authController.js';
-import { protect } from '../middleware/authMiddleware.js';
+import { protect,canSelectUserType,canSetupProfile } from '../middleware/authMiddleware.js';
 
 const router = express.Router();
 
@@ -66,9 +66,9 @@ router.post('/change-password', protect, changePassword);
 router.get('/check-status', protect, checkAuthStatus);
 
 // ✅ Profile Setup Route (Step 1 after signup)
-router.post('/profile-setup', protect, setupProfile);
+router.post('/profile-setup', protect,canSetupProfile, setupProfile);
 
 // ✅ User Type Selection (Step 2 after profile setup)
-router.post('/select-usertype', protect, selectUserType);
+router.post('/select-usertype', protect,canSelectUserType, selectUserType);
 
 export default router;

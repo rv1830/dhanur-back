@@ -151,3 +151,21 @@ export const isInfluencer = asyncHandler(async (req, res, next) => {
         throw new Error('Access denied. This area is reserved for Influencers.');
     }
 });
+
+export const canSetupProfile = asyncHandler(async (req, res, next) => {
+    if (req.user && !req.user.profileComplete) {
+        next();
+    } else {
+        res.status(400);
+        throw new Error('Profile already completed.');
+    }
+});
+
+export const canSelectUserType = asyncHandler(async (req, res, next) => {
+    if (req.user && req.user.profileComplete && !req.user.userType) {
+        next();
+    } else {
+        res.status(400);
+        throw new Error('User type already selected or profile incomplete.');
+    }
+});
