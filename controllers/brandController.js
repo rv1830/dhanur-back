@@ -5,29 +5,52 @@ import crypto from 'crypto';
 
 // =================================================================
 // 1. CREATE BRAND
-// =================================================================
 export const createBrand = asyncHandler(async (req, res) => {
     const { brandName, industry, companyEmail, website, description } = req.body;
     const user = req.user;
 
+    // 1. Influencer Check
     if (user.userType === 'INFLUENCER') {
         res.status(403);
         throw new Error('Influencers cannot create brands.');
     }
 
+    // 2. DUPLICATE CHECK: Brand Name ya Company Email pehle se toh nahi hai?
+    // $or operator use karke dono mein se koi bhi match milne par error throw karenge
+    const brandExists = await Brand.findOne({
+        $or: [
+            { brandName: { $regex: new RegExp(`^${brandName.trim()}$`, 'i') } }, // Case-insensitive name check
+            { companyEmail: companyEmail.toLowerCase().trim() }
+        ]
+    });
+
+    if (brandExists) {
+        res.status(400);
+        // Error message specify karna ki kaunsi cheez duplicate hai
+        const message = brandExists.brandName.toLowerCase() === brandName.trim().toLowerCase() 
+            ? 'A brand with this name already exists.' 
+            : 'A brand with this company email already exists.';
+        throw new Error(message);
+    }
+
+    // 3. Create Brand
     const brand = await Brand.create({
-        brandName,
+        brandName: brandName.trim(),
         industry,
-        companyEmail,
+        companyEmail: companyEmail.toLowerCase().trim(),
         website,
         description,
         members: [{ user: user._id, role: 'BRAND ADMIN' }]
     });
 
-    // User status update
-    user.userType = 'BRAND';
+    // 4. User status update (Only if they are not already a BRAND admin)
+    if (user.userType !== 'BRAND') {
+        user.userType = 'BRAND';
+    }
     user.onboardingComplete = true;
     await user.save();
+
+    console.log(`✅ Brand Created: ${brand.brandName} by ${user.uid}`);
 
     res.status(201).json({ 
         success: true, 

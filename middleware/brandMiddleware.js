@@ -3,12 +3,17 @@ import Brand from '../models/Brand.js';
 
 export const checkBrandRole = (allowedRoles) => {
     return asyncHandler(async (req, res, next) => {
-        // brandId params se ya body se uthayein (Frontend ab bid: BR-... bhejega)
-        const brandId = req.params.brandId || req.body.brandId;
-        const userId = req.user._id; // Internal ID for relationship check
+        // EXACT FIX: Search for 'bid' from all possible sources
+        const bid = req.params.bid || req.body.bid || req.params.brandId; 
+        const userId = req.user._id; 
 
-        // 🚨 STABLE ID CHANGE: Find by bid (Public ID) instead of Mongo _id
-        const brand = await Brand.findOne({ bid: brandId });
+        if (!bid) {
+            res.status(400);
+            throw new Error('Brand ID (bid) is missing.');
+        }
+
+        // FIND BY bid: taaki stable public ID use ho
+        const brand = await Brand.findOne({ bid: bid });
         
         if (!brand) {
             res.status(404);
@@ -19,10 +24,11 @@ export const checkBrandRole = (allowedRoles) => {
 
         if (!member || !allowedRoles.includes(member.role)) {
             res.status(403);
-            throw new Error('Unauthorized: You do not have permission for this action.');
+            throw new Error('Unauthorized: Insufficient permissions for this brand.');
         }
 
         req.brand = brand;
+        req.userBrandRole = member.role; 
         next();
     });
 };

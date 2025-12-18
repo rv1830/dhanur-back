@@ -130,13 +130,13 @@ export const errorHandler = (err, req, res, next) => {
 export const isBrand = asyncHandler(async (req, res, next) => {
     const allowedBrandRoles = ['BRAND', 'MEMBER'];
     
-    if (req.user && allowedBrandRoles.includes(req.user.userType) && req.user.onboardingComplete) {
-        console.log(`✅ Access Granted: User is a verified ${req.user.userType}`);
+    // User logged in hai aur uska type BRAND ya MEMBER hai
+    if (req.user && allowedBrandRoles.includes(req.user.userType)) {
+        console.log(`✅ Access Granted: Verified ${req.user.userType}`);
         next();
     } else {
-        console.error(`❌ Access Denied: User type ${req.user?.userType} unauthorized or onboarding incomplete`);
         res.status(403); 
-        throw new Error('Access denied. Reserved for Brands/Members with completed onboarding.');
+        throw new Error('Access denied. Brand account required.');
     }
 });
 
