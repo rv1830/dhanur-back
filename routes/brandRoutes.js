@@ -1,6 +1,6 @@
 import express from 'express';
 const router = express.Router();
-import { protect } from '../middleware/authMiddleware.js';
+import { protect ,isBrand } from '../middleware/authMiddleware.js';
 import { 
     createBrand, 
     inviteToBrand, 
@@ -17,6 +17,6 @@ router.post('/create',protect, createBrand);
 router.post('/join', protect, joinBrand);
 
 // Admin/Manager only
-router.post('/invite', protect, checkBrandRole(['BRAND ADMIN', 'MANAGER']), inviteToBrand);
+router.post('/invite', protect, isBrand, checkBrandRole(['BRAND ADMIN', 'MANAGER']), inviteToBrand);
 
 export default router;

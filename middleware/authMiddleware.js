@@ -122,3 +122,32 @@ export const errorHandler = (err, req, res, next) => {
         stack: process.env.NODE_ENV === 'production' ? null : err.stack,
     });
 };
+
+// =================================================================
+// 🛡️ ROLE-BASED ACCESS CONTROL (RBAC)
+// =================================================================
+
+// 1. Sirf Brand hi access kar paye
+export const isBrand = asyncHandler(async (req, res, next) => {
+    // req.user 'protect' middleware se aata hai
+    if (req.user && req.user.userType === 'BRAND' && req.user.onboardingComplete) {
+        console.log(`✅ Access Granted: User is a verified BRAND`);
+        next();
+    } else {
+        console.error(`❌ Access Denied: User is not a BRAND or onboarding incomplete`);
+        res.status(403); // 403 means Forbidden
+        throw new Error('Access denied. This area is reserved for Brands with completed onboarding.');
+    }
+});
+
+// 2. Sirf Influencer hi access kar paye
+export const isInfluencer = asyncHandler(async (req, res, next) => {
+    if (req.user && req.user.userType === 'INFLUENCER' && req.user.onboardingComplete) {
+        console.log(`✅ Access Granted: User is a verified INFLUENCER`);
+        next();
+    } else {
+        console.error(`❌ Access Denied: User is not an INFLUENCER`);
+        res.status(403);
+        throw new Error('Access denied. This area is reserved for Influencers.');
+    }
+});

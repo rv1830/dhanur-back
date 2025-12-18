@@ -1,7 +1,7 @@
 // --- routes/socialRoutes.js (UPDATED for FB/IG separation) ---
 
 import express from 'express';
-import { protect } from '../middleware/authMiddleware.js';
+import { protect,isInfluencer } from '../middleware/authMiddleware.js';
 import {
     connectMetaAccount, // 👈 NEW: Meta Connect Start
     handleCallback,
@@ -20,20 +20,20 @@ const router = express.Router();
 // =======================
 
 // ✅ NEW: Start the connection flow for Meta platforms
-router.get('/connect/:platform', protect, connectMetaAccount); 
+router.get('/connect/:platform', protect,isInfluencer, connectMetaAccount); 
 
 // 🔗 OAuth Callback
-router.get('/callback/:platform', protect, handleCallback);
+router.get('/callback/:platform', protect,isInfluencer, handleCallback);
 
 // =======================
 // 🔄 SYNC & DETAILS
 // =======================
 
 // 🔄 Manual Sync (Protected)
-router.post('/sync/:platform', protect, syncAccountData);
+router.post('/sync/:platform', protect,isInfluencer, syncAccountData);
 
 // 🔍 Account Details Fetch (Protected)
-router.get('/account/:platform', protect, getSocialAccountDetails);
+router.get('/account/:platform', protect,isInfluencer, getSocialAccountDetails);
 
 
 // =======================
@@ -41,13 +41,13 @@ router.get('/account/:platform', protect, getSocialAccountDetails);
 // =======================
 
 // ✅ YouTube Analytics
-router.get('/analytics/youtube', protect, getYouTubeAnalyticsData);
+router.get('/analytics/youtube', protect, isInfluencer,getYouTubeAnalyticsData);
 
 // ✅ NEW: Instagram Analytics
-router.get('/analytics/instagram', protect, getInstagramAnalyticsData);
+router.get('/analytics/instagram', protect,isInfluencer, getInstagramAnalyticsData);
 
 // ✅ NEW: Facebook Analytics
-router.get('/analytics/facebook', protect, getFacebookAnalyticsData);
+router.get('/analytics/facebook', protect,isInfluencer, getFacebookAnalyticsData);
 
 
 // =======================
@@ -55,6 +55,6 @@ router.get('/analytics/facebook', protect, getFacebookAnalyticsData);
 // =======================
 
 // 🗑️ Disconnect Account (Protected)
-router.delete('/disconnect/:platform', protect, disconnectSocialAccount);
+router.delete('/disconnect/:platform', protect,isInfluencer, disconnectSocialAccount);
 
 export default router;
