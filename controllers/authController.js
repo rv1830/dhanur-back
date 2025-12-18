@@ -741,30 +741,32 @@ export const selectUserType = asyncHandler(async (req, res) => {
         throw new Error(`Conflict: You are already registered as ${user.userType}.`);
     }
 
-    // Update user
+    // Update user
     if (!user.userType) {
         user.userType = userType;
-        user.onboardingComplete = true;
+        // BRAND ke liye false rahega jab tak brand create na ho jaye
+        user.onboardingComplete = userType === 'BRAND' ? false : true;
         await user.save();
-        
+        
         setTokenCookie(res, user); 
     } else if (user.userType === userType && !user.onboardingComplete) {
-        user.onboardingComplete = true;
+        user.onboardingComplete = userType === 'BRAND' ? false : true;
         await user.save();
         setTokenCookie(res, user); 
     }
     
-    let dashboardPath = user.userType === 'BRAND' ? '/dashboard/brand' : '/dashboard/influencer';
+    // REDIRECT LOGIC: Brand ko onboarding pe bhej rahe hain
+    let dashboardPath = user.userType === 'BRAND' ? '/onboarding' : '/dashboard/influencer';
     
     res.status(200).json({
-        message: `User type set to ${user.userType}. Onboarding complete.`,
+        message: `User type set to ${user.userType}.`,
         user: { 
             _id: user._id, 
-            email: user.email,
-            name: user.name,
-            phoneNumber: user.phoneNumber, 
-            dateOfBirth: user.dateOfBirth,
-            gender: user.gender,
+            email: user.email,
+            name: user.name,
+            phoneNumber: user.phoneNumber, 
+            dateOfBirth: user.dateOfBirth,
+            gender: user.gender,
             userType: user.userType, 
             profileComplete: user.profileComplete,
             onboardingComplete: user.onboardingComplete

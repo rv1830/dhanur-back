@@ -22,12 +22,16 @@ export const createBrand = asyncHandler(async (req, res) => {
         members: [{ user: user._id, role: 'BRAND ADMIN' }]
     });
 
-    // Update User Type
     user.userType = 'BRAND';
     user.onboardingComplete = true;
     await user.save();
 
-    res.status(201).json({ success: true, brand });
+    // ✅ Yahan BRAND ID ke saath redirect path bhejein
+    res.status(201).json({ 
+        success: true, 
+        brand, 
+        redirectTo: `/dashboard/brand/${brand._id}` // <--- Brand ID yahan bhej di
+    });
 });
 
 // 2. INVITE MEMBER: Admin/Manager link generate karke bhejenge
