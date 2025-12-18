@@ -1,22 +1,28 @@
 import express from 'express';
 const router = express.Router();
-import { protect ,isBrand } from '../middleware/authMiddleware.js';
+import { protect, isBrand } from '../middleware/authMiddleware.js';
 import { 
     createBrand, 
     inviteToBrand, 
     getInviteDetails, 
-    joinBrand 
+    joinBrand,
+    getMyBrands,
+    getBrandDetails
 } from '../controllers/brandController.js';
 import { checkBrandRole } from '../middleware/brandMiddleware.js';
 
-// Public/Semi-public
-router.get('/invite-details/:token', getInviteDetails); // Naye user ko brand name dikhane ke liye
+// --- Public / General ---
+router.get('/invite-details/:token', getInviteDetails);
 
-// Protected
-router.post('/create',protect, createBrand);
+// --- Protected (Login Required) ---
+router.post('/create', protect, createBrand);
 router.post('/join', protect, joinBrand);
+router.get('/my-brands', protect, getMyBrands); // User ke saare brands fetch karne ke liye
 
-// Admin/Manager only
+// --- Specific Brand Details (bid is used here) ---
+router.get('/:bid', protect, getBrandDetails);
+
+// --- Admin/Manager Only ---
 router.post('/invite', protect, isBrand, checkBrandRole(['BRAND ADMIN', 'MANAGER']), inviteToBrand);
 
 export default router;

@@ -10,14 +10,11 @@ export const createBrand = asyncHandler(async (req, res) => {
     const { brandName, industry, companyEmail, website, description } = req.body;
     const user = req.user;
 
-    console.log(`🚀 Creating brand for User: ${user.uid}`);
-
     if (user.userType === 'INFLUENCER') {
         res.status(403);
         throw new Error('Influencers cannot create brands.');
     }
 
-    // INDUSTRY FIX: members array mein Mongo _id hi rahega internal linking ke liye
     const brand = await Brand.create({
         brandName,
         industry,
@@ -32,37 +29,58 @@ export const createBrand = asyncHandler(async (req, res) => {
     user.onboardingComplete = true;
     await user.save();
 
-    console.log(`✅ Brand Created: ${brand.brandName} (ID: ${brand.bid})`);
-
-    // ✅ FIXED: Redirect to 'bid' (BR-12345678) instead of Mongo _id
     res.status(201).json({ 
         success: true, 
-        brand: {
-            bid: brand.bid,
-            brandName: brand.brandName,
-            industry: brand.industry
-        }, 
+        brand: { bid: brand.bid, brandName: brand.brandName }, 
         redirectTo: `/dashboard/brand/${brand.bid}` 
     });
 });
 
 // =================================================================
-// 2. INVITE MEMBER
+// 2. GET ALL MY BRANDS (List for Switcher/Sidebar)
 // =================================================================
-export const inviteToBrand = asyncHandler(async (req, res) => {
-    const { email, role, bid } = req.body; // bid: BR-12345678 bhejenge frontend se
+export const getMyBrands = asyncHandler(async (req, res) => {
+    // Current user jin brands ka member hai unki list
+    const brands = await Brand.find({ "members.user": req.user._id })
+        .select('bid brandName industry'); 
 
-    // FIXED: Find brand by bid
-    const brand = await Brand.findOne({ bid });
+    res.json({ success: true, brands });
+});
 
-    if (!brand) { 
-        res.status(404); 
-        throw new Error('Brand not found'); 
+// =================================================================
+// 3. GET BRAND DETAILS BY ID (Using bid)
+// =================================================================
+export const getBrandDetails = asyncHandler(async (req, res) => {
+    const { bid } = req.params;
+
+    const brand = await Brand.findOne({ bid })
+        .populate('members.user', 'name email profileImage');
+
+    if (!brand) {
+        res.status(404);
+        throw new Error('Brand not found');
     }
 
-    // Check if user is already a member
-    const invitationToken = crypto.randomBytes(32).toString('hex');
+    // Security: Check if requesting user belongs to this brand
+    const isMember = brand.members.some(m => m.user._id.toString() === req.user._id.toString());
+    if (!isMember) {
+        res.status(403);
+        throw new Error('Access denied to this brand.');
+    }
 
+    res.json({ success: true, brand });
+});
+
+// =================================================================
+// 4. INVITE MEMBER
+// =================================================================
+export const inviteToBrand = asyncHandler(async (req, res) => {
+    const { email, role, bid } = req.body;
+    const brand = await Brand.findOne({ bid });
+
+    if (!brand) { res.status(404); throw new Error('Brand not found'); }
+
+    const invitationToken = crypto.randomBytes(32).toString('hex');
     brand.invitations.push({
         email: email.toLowerCase().trim(),
         role,
@@ -71,81 +89,59 @@ export const inviteToBrand = asyncHandler(async (req, res) => {
     });
 
     await brand.save();
-
     const inviteLink = `${process.env.FRONTEND_URL}/join-brand?token=${invitationToken}`;
 
-    console.log(`📧 Invite generated for ${email} in Brand: ${brand.brandName}`);
-
-    res.json({ 
-        success: true, 
-        message: `Invite generated for ${email}`,
-        inviteLink 
-    });
+    res.json({ success: true, message: `Invite generated for ${email}`, inviteLink });
 });
 
 // =================================================================
-// 3. GET INVITE DETAILS
+// 5. GET INVITE DETAILS
 // =================================================================
 export const getInviteDetails = asyncHandler(async (req, res) => {
     const { token } = req.params;
-    
-    // Brand find by token in invitations array
     const brand = await Brand.findOne({ "invitations.token": token });
 
-    if (!brand) {
-        res.status(404);
-        throw new Error('Invitation link is invalid or expired.');
-    }
+    if (!brand) { res.status(404); throw new Error('Invalid or expired token.'); }
 
     const invite = brand.invitations.find(inv => inv.token === token);
-    
-    res.json({
-        brandName: brand.brandName,
-        role: invite.role,
-        email: invite.email,
-        bid: brand.bid // Return bid for frontend consistency
-    });
+    res.json({ brandName: brand.brandName, role: invite.role, email: invite.email, bid: brand.bid });
 });
 
 // =================================================================
-// 4. JOIN BRAND
+// 6. JOIN BRAND (Multi-Role Logic)
 // =================================================================
 export const joinBrand = asyncHandler(async (req, res) => {
     const { token } = req.body;
-    const user = req.user; // Logged-in user from protect middleware
+    const user = req.user;
+
+    if (user.userType === 'INFLUENCER') {
+        res.status(403);
+        throw new Error('Influencers cannot join brands.');
+    }
 
     const brand = await Brand.findOne({ "invitations.token": token });
-    if (!brand) {
-        res.status(400);
-        throw new Error('Invalid or expired invitation.');
-    }
+    if (!brand) { res.status(400); throw new Error('Invalid invitation.'); }
 
     const invite = brand.invitations.find(inv => inv.token === token);
-
-    // SECURITY: Email match
     if (invite.email !== user.email) {
         res.status(403);
-        throw new Error('This invite was sent to a different email address.');
+        throw new Error('Email mismatch.');
     }
 
-    // 1. Add member to brand
     brand.members.push({ user: user._id, role: invite.role });
-    
-    // 2. Remove invite
     brand.invitations = brand.invitations.filter(i => i.token !== token);
     await brand.save();
 
-    // 3. Update User status
-    // Industry fix: If it's a member being invited, userType should be 'MEMBER'
-    user.userType = 'MEMBER'; 
+    // Agar user pehle se Admin (BRAND) nahi hai, tabhi use MEMBER set karein
+    if (user.userType !== 'BRAND') {
+        user.userType = 'MEMBER';
+    }
     user.onboardingComplete = true;
     await user.save();
 
-    console.log(`🤝 User ${user.uid} joined Brand ${brand.brandName} as ${invite.role}`);
-
     res.json({ 
         success: true, 
-        message: `Welcome to ${brand.brandName}!`,
-        redirectTo: `/dashboard/brand/${brand.bid}`
+        message: `Welcome to ${brand.brandName}!`, 
+        redirectTo: `/dashboard/brand/${brand.bid}` 
     });
 });
