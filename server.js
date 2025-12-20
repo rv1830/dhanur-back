@@ -62,15 +62,16 @@ app.use(express.urlencoded({ extended: true }));
 // CORS
 const isProduction = process.env.NODE_ENV === 'production';
 const corsOptions = {
-  origin: isProduction 
+  origin: isProduction
     ? [
+        'https://collab.dhanurai.com',   // ✅ NEW (MOST IMPORTANT)
         'https://dhanur.app',
         'https://www.dhanur.app',
         'https://dhanur-collab.vercel.app',
         'http://localhost:3000'   // 👈 बस यही add
-      ] 
-    : ['http://localhost:3000', 'http://localhost:3001'], 
-  credentials: true, 
+      ]
+    : ['http://localhost:3000', 'http://localhost:3001'],
+  credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
 };
