@@ -5,14 +5,14 @@ import asyncHandler from 'express-async-handler';
 // --- Models ---
 import SocialAccount from '../models/SocialAccount.js';
 import YouTubeAnalytics from '../models/YouTubeAnalytics.js'; 
-import FacebookAnalytics from '../models/FacebookAnalytics.js'; // ✅ NEW: FacebookAnalytics मॉडल इंपोर्ट करें
-import InstagramAnalytics from '../models/InstagramAnalytics.js'; // ✅ NEW: InstagramAnalytics मॉडल इंपोर्ट करें
+import FacebookAnalytics from '../models/FacebookAnalytics.js'; 
+import InstagramAnalytics from '../models/InstagramAnalytics.js'; 
 import crypto from 'crypto'; 
 
 // --- Services ---
-import * as metaService from '../services/metaService.js'; // General Meta Token Service
-import * as facebookService from '../services/facebookService.js'; // ✅ NEW
-import * as instagramService from '../services/instagramService.js'; // ✅ NEW
+import * as metaService from '../services/metaService.js'; 
+import * as facebookService from '../services/facebookService.js'; 
+import * as instagramService from '../services/instagramService.js'; 
 import * as linkedInService from '../services/linkedInService.js';
 import * as snapchatService from '../services/snapchatService.js';
 import * as youtubeService from '../services/youtubeService.js';
@@ -201,8 +201,8 @@ export const handleCallback = asyncHandler(async (req, res, next) => {
 
         const frontendRedirect = process.env.FRONTEND_URL || 'http://localhost:3000';
         
-        // Redirect to the influencer connection success page
-        let redirectUrl = `${frontendRedirect}/dashboard/influencer/connect`;
+        // ✅ UPDATED PATH: Redirects to /dashboard/connect (Removed /influencer)
+        let redirectUrl = `${frontendRedirect}/dashboard/connect`;
         
         // Add query parameters for frontend visibility
         const params = new URLSearchParams({

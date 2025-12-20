@@ -5,6 +5,7 @@ import crypto from 'crypto';
 
 // =================================================================
 // 1. CREATE BRAND
+// =================================================================
 export const createBrand = asyncHandler(async (req, res) => {
     const { brandName, industry, companyEmail, website, description } = req.body;
     const user = req.user;
@@ -15,18 +16,16 @@ export const createBrand = asyncHandler(async (req, res) => {
         throw new Error('Influencers cannot create brands.');
     }
 
-    // 2. DUPLICATE CHECK: Brand Name ya Company Email pehle se toh nahi hai?
-    // $or operator use karke dono mein se koi bhi match milne par error throw karenge
+    // 2. DUPLICATE CHECK
     const brandExists = await Brand.findOne({
         $or: [
-            { brandName: { $regex: new RegExp(`^${brandName.trim()}$`, 'i') } }, // Case-insensitive name check
+            { brandName: { $regex: new RegExp(`^${brandName.trim()}$`, 'i') } }, 
             { companyEmail: companyEmail.toLowerCase().trim() }
         ]
     });
 
     if (brandExists) {
         res.status(400);
-        // Error message specify karna ki kaunsi cheez duplicate hai
         const message = brandExists.brandName.toLowerCase() === brandName.trim().toLowerCase() 
             ? 'A brand with this name already exists.' 
             : 'A brand with this company email already exists.';
@@ -43,7 +42,7 @@ export const createBrand = asyncHandler(async (req, res) => {
         members: [{ user: user._id, role: 'BRAND ADMIN' }]
     });
 
-    // 4. User status update (Only if they are not already a BRAND admin)
+    // 4. User status update
     if (user.userType !== 'BRAND') {
         user.userType = 'BRAND';
     }
@@ -55,18 +54,13 @@ export const createBrand = asyncHandler(async (req, res) => {
     res.status(201).json({ 
         success: true, 
         brand: { bid: brand.bid, brandName: brand.brandName }, 
-        redirectTo: `/dashboard/brand/${brand.bid}` 
+        // ✅ CORRECTED PATH: /dashboard/br_XXXX (Removed /brand)
+        redirectTo: `/dashboard/${brand.bid}` 
     });
 });
 
 // =================================================================
-// 2. GET ALL MY BRANDS (List for Switcher/Sidebar)
-// =================================================================
-// =================================================================
-// 2. GET ALL MY BRANDS (List with User Role & Name)
-// =================================================================
-// =================================================================
-// 2. GET ALL MY BRANDS (Fast Response: Only Name & Role)
+// 2. GET ALL MY BRANDS
 // =================================================================
 export const getMyBrands = asyncHandler(async (req, res) => {
     const brands = await Brand.find({ "members.user": req.user._id })
@@ -93,7 +87,7 @@ export const getMyBrands = asyncHandler(async (req, res) => {
 });
 
 // =================================================================
-// 3. GET BRAND DETAILS BY ID (Using bid)
+// 3. GET BRAND DETAILS BY ID
 // =================================================================
 export const getBrandDetails = asyncHandler(async (req, res) => {
     const { bid } = req.params;
@@ -175,19 +169,18 @@ export const joinBrand = asyncHandler(async (req, res) => {
         throw new Error('Email mismatch.');
     }
 
-    // Sirf member list mein add karo
+    // Add to member list
     brand.members.push({ user: user._id, role: invite.role });
     brand.invitations = brand.invitations.filter(i => i.token !== token);
     await brand.save();
 
-    // ✅ GLOBAL USER TYPE KO KUCH MAT KARO
-    // Wo null hai to null hi rehne do
     user.onboardingComplete = true; 
     await user.save();
 
     res.json({ 
         success: true, 
         message: `You have been added to ${brand.brandName}.`, 
-        redirectTo: user.userType === null ? '/select-usertype' : `/dashboard/brand/${brand.bid}`
+        // ✅ CORRECTED PATH: /dashboard/br_XXXX (Removed /brand)
+        redirectTo: user.userType === null ? '/select-usertype' : `/dashboard/${brand.bid}`
     });
 });

@@ -1,8 +1,9 @@
-// --- controllers/authController.js (UPDATED with Meta Auth & Industry IDs) ---
+// --- controllers/authController.js (UPDATED with Dynamic Dashboard Paths) ---
 
 import asyncHandler from 'express-async-handler';
 import bcrypt from 'bcryptjs';
 import User from '../models/User.js';
+import Brand from '../models/Brand.js'; // ✅ IMPORT ADDED FOR ID LOOKUP
 import { setTokenCookie, invalidateSession } from '../utils/authUtils.js'; 
 import { cookieOptions } from '../middleware/authMiddleware.js'; 
 import { OAuth2Client } from 'google-auth-library';
@@ -36,6 +37,33 @@ transporter.verify((error, success) => {
 });
 
 const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:3000';
+
+// =================================================================
+// 🛠️ HELPER: GET DASHBOARD PATH
+// =================================================================
+// Decides where to send the user based on Type and Brand Membership
+const getDashboardPath = async (user) => {
+    // 1. Influencer -> Direct Dashboard
+    if (user.userType === 'INFLUENCER') {
+        return '/dashboard'; 
+    } 
+    
+    // 2. Brand -> Dashboard + Brand ID
+    if (user.userType === 'BRAND') {
+        // Find which brand this user belongs to
+        const userBrand = await Brand.findOne({ 'members.user': user._id }).select('bid');
+        
+        if (userBrand) {
+            // ✅ Dynamic URL: /dashboard/br_12345
+            return `/dashboard/${userBrand.bid}`; 
+        } else {
+            // User is BRAND type but hasn't created/joined a brand yet
+            return '/onboarding'; 
+        }
+    }
+    
+    return '/select-usertype'; // Fallback
+};
 
 // =================================================================
 // 1. BASIC EMAIL/PASSWORD AUTH
@@ -140,9 +168,8 @@ export const authUser = asyncHandler(async (req, res) => {
             });
         }
 
-        const dashboardPath = user.userType === 'BRAND' 
-            ? '/dashboard/brand' 
-            : '/dashboard/influencer';
+        // ✅ UPDATED: Use Helper for Dynamic Path
+        const dashboardPath = await getDashboardPath(user);
         
         res.json({ 
             uid: user.uid, 
@@ -156,7 +183,7 @@ export const authUser = asyncHandler(async (req, res) => {
             onboardingComplete: user.onboardingComplete,
             authProvider: user.authProvider,
             message: 'Login successful',
-            redirectTo: dashboardPath
+            redirectTo: dashboardPath // Will be /dashboard or /dashboard/br_XXXX
         });
     } else {
         res.status(401); 
@@ -375,8 +402,8 @@ export const googleCallback = asyncHandler(async (req, res) => {
         if (!user.profileComplete) return res.redirect(`${FRONTEND_URL}/profile-setup`); 
         if (user.userType === null) return res.redirect(`${FRONTEND_URL}/select-usertype`); 
 
-        const dashboardPath = (user.userType === 'BRAND' || user.userType === 'MEMBER') ? '/dashboard/brand' : 
-                             user.userType === 'INFLUENCER' ? '/dashboard/influencer' : '/dashboard';
+        // ✅ UPDATED: Use Helper for Dynamic Path
+        const dashboardPath = await getDashboardPath(user);
         
         return res.redirect(`${FRONTEND_URL}${dashboardPath}`);
 
@@ -472,8 +499,8 @@ export const linkedinCallback = asyncHandler(async (req, res) => {
         if (!user.profileComplete) return res.redirect(`${FRONTEND_URL}/profile-setup`);
         if (user.userType === null) return res.redirect(`${FRONTEND_URL}/select-usertype`); 
 
-        const dashboardPath = (user.userType === 'BRAND' || user.userType === 'MEMBER') ? '/dashboard/brand' : 
-                             user.userType === 'INFLUENCER' ? '/dashboard/influencer' : '/dashboard';
+        // ✅ UPDATED: Use Helper for Dynamic Path
+        const dashboardPath = await getDashboardPath(user);
         
         return res.redirect(`${FRONTEND_URL}${dashboardPath}`);
 
@@ -548,8 +575,8 @@ export const metaAuthCallback = asyncHandler(async (req, res) => {
         if (!user.profileComplete) return res.redirect(`${FRONTEND_URL}/profile-setup`); 
         if (user.userType === null) return res.redirect(`${FRONTEND_URL}/select-usertype`); 
 
-        const dashboardPath = (user.userType === 'BRAND' || user.userType === 'MEMBER') ? '/dashboard/brand' : 
-                             user.userType === 'INFLUENCER' ? '/dashboard/influencer' : '/dashboard';
+        // ✅ UPDATED: Use Helper for Dynamic Path
+        const dashboardPath = await getDashboardPath(user);
         
         return res.redirect(`${FRONTEND_URL}${dashboardPath}`);
 
@@ -631,7 +658,10 @@ export const selectUserType = asyncHandler(async (req, res) => {
         setTokenCookie(res, user); 
     }
     
-    let dashboardPath = user.userType === 'BRAND' ? '/onboarding' : '/dashboard/influencer';
+    // ✅ Logic Updated:
+    // Brand -> /onboarding (to create brand)
+    // Influencer -> /dashboard
+    let dashboardPath = user.userType === 'BRAND' ? '/onboarding' : '/dashboard';
     
     res.status(200).json({
         message: `User type set to ${user.userType}.`,
