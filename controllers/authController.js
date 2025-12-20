@@ -88,9 +88,23 @@ export const authUser = asyncHandler(async (req, res) => {
     const { email, password } = req.body;
     
     const user = await User.findOne({ email: email.toLowerCase().trim() });
-    if (!user || !user.password) {
-        res.status(401); 
-        throw new Error('Invalid email or password');
+
+    // 🔴 CHANGE 1: Handle User Not Found explicitly
+    if (!user) {
+        return res.status(404).json({ 
+            message: 'Account does not exist. Please register.',
+            error: 'USER_NOT_FOUND',
+            redirectTo: '/register' 
+        });
+    }
+
+    // 🔴 CHANGE 2: Handle Social Login users trying to use password
+    if (!user.password) {
+        return res.status(400).json({ 
+            message: `This account uses ${user.authProvider} login. Please login with that.`,
+            error: 'SOCIAL_LOGIN_REQUIRED',
+            authProvider: user.authProvider 
+        });
     }
 
     const isMatch = await user.matchPassword(password);
@@ -100,7 +114,7 @@ export const authUser = asyncHandler(async (req, res) => {
         
         if (!user.profileComplete) {
             return res.json({ 
-                uid: user.uid, // Changed _id to uid
+                uid: user.uid, 
                 email: user.email, 
                 name: user.name,
                 userType: user.userType,
@@ -114,7 +128,7 @@ export const authUser = asyncHandler(async (req, res) => {
         
         if (user.userType === null) {
             return res.json({ 
-                uid: user.uid, // Changed _id to uid
+                uid: user.uid, 
                 email: user.email, 
                 name: user.name,
                 userType: user.userType,
@@ -126,12 +140,12 @@ export const authUser = asyncHandler(async (req, res) => {
             });
         }
 
-const dashboardPath = user.userType === 'BRAND' 
-    ? '/dashboard/brand' 
-    : '/dashboard/influencer';
+        const dashboardPath = user.userType === 'BRAND' 
+            ? '/dashboard/brand' 
+            : '/dashboard/influencer';
         
         res.json({ 
-            uid: user.uid, // Changed _id to uid
+            uid: user.uid, 
             email: user.email, 
             name: user.name,
             phoneNumber: user.phoneNumber,
@@ -185,7 +199,7 @@ export const checkAuthStatus = asyncHandler(async (req, res) => {
     res.status(200).json({
         isAuthenticated: true,
         user: { 
-            uid: req.user.uid, // Changed _id to uid
+            uid: req.user.uid, 
             email: req.user.email, 
             name: req.user.name,
             phoneNumber: req.user.phoneNumber,
@@ -195,10 +209,6 @@ export const checkAuthStatus = asyncHandler(async (req, res) => {
             userType: req.user.userType,
             profileComplete: req.user.profileComplete, 
             onboardingComplete: req.user.onboardingComplete,
-            // authProvider: req.user.authProvider,
-            // googleId: req.user.googleId || null,
-            // linkedinId: req.user.linkedinId || null,
-            // facebookId: req.user.facebookId || null,
         },
     });
 });
@@ -253,7 +263,7 @@ export const setupProfile = asyncHandler(async (req, res) => {
     res.status(200).json({
         message: 'Profile setup completed successfully. Please select your user type.',
         user: {
-             uid: user.uid, // Changed _id to uid
+             uid: user.uid, 
              email: user.email,
              name: user.name,
              phoneNumber: user.phoneNumber,
@@ -348,7 +358,10 @@ export const googleCallback = asyncHandler(async (req, res) => {
                 profilePicture: picture
             });
         } else {
-            if (!user) return res.redirect(`${FRONTEND_URL}/register?error=no_account_found`);
+            // 🔴 CHANGE 3: Redirect with data if user tries to Login but doesn't exist
+            if (!user) {
+                return res.redirect(`${FRONTEND_URL}/register?error=account_not_found&email=${encodeURIComponent(email)}&name=${encodeURIComponent(name)}`);
+            }
             if (!user.googleId) {
                 user.googleId = googleId;
                 user.authProvider = 'GOOGLE';
@@ -444,7 +457,10 @@ export const linkedinCallback = asyncHandler(async (req, res) => {
                 profilePicture: picture
             });
         } else {
-            if (!user) return res.redirect(`${FRONTEND_URL}/register?error=no_account_found`);
+             // 🔴 CHANGE 4: Redirect with data if user tries to Login but doesn't exist
+            if (!user) {
+                return res.redirect(`${FRONTEND_URL}/register?error=account_not_found&email=${encodeURIComponent(userEmail || '')}&name=${encodeURIComponent(name || '')}`);
+            }
             if (!user.linkedinId) {
                 user.linkedinId = linkedinId;
                 user.authProvider = 'LINKEDIN';
@@ -620,7 +636,7 @@ export const selectUserType = asyncHandler(async (req, res) => {
     res.status(200).json({
         message: `User type set to ${user.userType}.`,
         user: { 
-            uid: user.uid, // Changed _id to uid
+            uid: user.uid, 
             email: user.email,
             name: user.name,
             phoneNumber: user.phoneNumber, 
