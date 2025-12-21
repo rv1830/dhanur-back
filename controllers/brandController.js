@@ -197,6 +197,9 @@ export const searchBrands = asyncHandler(async (req, res) => {
         limit = 10 
     } = req.query;
 
+    // 🔥 Current User ID (Influencer)
+    const myUserId = req.user ? req.user._id : null;
+
     const pageNum = Number(page);
     const limitNum = Number(limit);
     const skip = (pageNum - 1) * limitNum;
@@ -223,7 +226,6 @@ export const searchBrands = asyncHandler(async (req, res) => {
     // 👤 ADMIN FETCHING LOGIC START
     // =========================================================
     
-    // Step A: 'members' array me se sirf 'BRAND ADMIN' wala object nikalo
     pipeline.push({
         $addFields: {
             adminMember: {
@@ -241,7 +243,6 @@ export const searchBrands = asyncHandler(async (req, res) => {
         }
     });
 
-    // Step B: Us Admin ki User ID se 'users' collection me JOIN maaro
     pipeline.push({
         $lookup: {
             from: "users",
@@ -251,17 +252,38 @@ export const searchBrands = asyncHandler(async (req, res) => {
         }
     });
 
-    // Step C: Array ko Object banao (Unwind)
     pipeline.push({
         $unwind: {
             path: "$adminDetails",
-            preserveNullAndEmptyArrays: true // Agar admin delete ho gaya ho tab bhi brand dikhe
+            preserveNullAndEmptyArrays: true 
         }
     });
-    // =========================================================
-    // 👤 ADMIN FETCHING LOGIC END
-    // =========================================================
 
+    // =========================================================
+    // 🔗 CONNECTION STATUS LOGIC (NEW ADDITION)
+    // =========================================================
+    if (myUserId) {
+        pipeline.push({
+            $lookup: {
+                from: 'connections',
+                let: { brandInternalId: '$_id' }, // Brand ki Internal ID
+                pipeline: [
+                    {
+                        $match: {
+                            $expr: {
+                                $and: [
+                                    { $eq: ['$brandId', '$$brandInternalId'] }, // Brand Match
+                                    { $eq: ['$influencerId', myUserId] }        // Me (Influencer) Match
+                                ]
+                            }
+                        }
+                    },
+                    { $project: { status: 1 } } // Sirf status uthao
+                ],
+                as: 'connectionInfo'
+            }
+        });
+    }
 
     // 2. PROJECTION STAGE (Clean Data)
     pipeline.push({
@@ -275,7 +297,12 @@ export const searchBrands = asyncHandler(async (req, res) => {
             companyEmail: 1,
             description: 1,
             
-            // ✅ Admin Info Add kar diya
+            // ✅ Connection Status
+            connectionStatus: { 
+                $ifNull: [{ $arrayElemAt: ["$connectionInfo.status", 0] }, "NOT_CONNECTED"] 
+            },
+
+            // ✅ Admin Info
             admin: {
                 name: "$adminDetails.name",
                 uid: "$adminDetails.uid",

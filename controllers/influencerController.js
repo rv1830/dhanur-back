@@ -14,6 +14,13 @@ export const searchInfluencers = asyncHandler(async (req, res) => {
         page = 1, limit = 10 
     } = req.query;
 
+    // 🔥 My Brand ID Logic (Agar user Brand hai)
+    let myBrandId = null;
+    if (req.user && req.user.userType === 'BRAND') {
+        const brand = await Brand.findOne({ 'members.user': req.user._id }).select('_id');
+        if (brand) myBrandId = brand._id;
+    }
+
     const pageNum = Number(page);
     const limitNum = Number(limit);
     const skip = (pageNum - 1) * limitNum;
@@ -27,7 +34,6 @@ export const searchInfluencers = asyncHandler(async (req, res) => {
         profileComplete: true
     };
 
-    // Text Search (Name or Bio)
     if (keyword) {
         matchStage.$or = [
             { name: { $regex: keyword, $options: 'i' } },
@@ -35,7 +41,6 @@ export const searchInfluencers = asyncHandler(async (req, res) => {
         ];
     }
     
-    // Gender Filter
     if (gender) matchStage.gender = gender.toUpperCase();
 
     pipeline.push({ $match: matchStage });
@@ -43,28 +48,26 @@ export const searchInfluencers = asyncHandler(async (req, res) => {
     // 2. Lookup Social Accounts
     pipeline.push({
         $lookup: {
-            from: 'socialaccounts', // Collection name in MongoDB
+            from: 'socialaccounts',
             localField: '_id',
             foreignField: 'userId',
             as: 'socialAccounts'
         }
     });
 
-    // 3. Platform Filter (e.g., Only show influencers with YouTube)
     if (platform) {
         pipeline.push({
             $match: { 'socialAccounts.platform': platform.toUpperCase() }
         });
     }
 
-    // 4. Calculate Total Reach (Sum of followers)
+    // 4. Calculate Total Reach
     pipeline.push({
         $addFields: {
             totalReach: { $sum: '$socialAccounts.followersCount' }
         }
     });
 
-    // 5. Followers Range Filter
     if (minFollowers || maxFollowers) {
         const followerMatch = {};
         if (minFollowers) followerMatch.$gte = Number(minFollowers);
@@ -72,16 +75,48 @@ export const searchInfluencers = asyncHandler(async (req, res) => {
         pipeline.push({ $match: { totalReach: followerMatch } });
     }
 
-    // 6. PROJECTION (Clean Data, No IDs)
+    // =========================================================
+    // 🔗 CONNECTION STATUS LOGIC (NEW ADDITION)
+    // =========================================================
+    if (myBrandId) {
+        pipeline.push({
+            $lookup: {
+                from: 'connections',
+                let: { influencerInternalId: '$_id' }, // Influencer ki Internal ID
+                pipeline: [
+                    {
+                        $match: {
+                            $expr: {
+                                $and: [
+                                    { $eq: ['$brandId', myBrandId] },             // My Brand Match
+                                    { $eq: ['$influencerId', '$$influencerInternalId'] } // Influencer Match
+                                ]
+                            }
+                        }
+                    },
+                    { $project: { status: 1 } } // Sirf status uthao
+                ],
+                as: 'connectionInfo'
+            }
+        });
+    }
+
+    // 6. PROJECTION (Clean Data)
     pipeline.push({
         $project: {
-            _id: 0, // ❌ Removing Mongo ID
+            _id: 0,
             uid: 1,
             name: 1,
             profilePicture: 1,
             gender: 1,
             bio: '$profile.bio',
             totalReach: 1,
+            
+            // ✅ Connection Status
+            connectionStatus: { 
+                $ifNull: [{ $arrayElemAt: ["$connectionInfo.status", 0] }, "NOT_CONNECTED"] 
+            },
+
             socials: {
                 $map: {
                     input: "$socialAccounts",
@@ -116,7 +151,6 @@ export const searchInfluencers = asyncHandler(async (req, res) => {
         influencers
     });
 });
-
 
 // =================================================================
 // 👤 GET FULL PROFILE (Detail View - No Phone, Clickable Links, 24h Data)

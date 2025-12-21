@@ -16,6 +16,7 @@ import { runDailyYoutubeSync } from './services/youtubeService.js';
 import { runDailyFacebookSync } from './services/facebookService.js'; 
 import { runDailyInstagramSync } from './services/instagramService.js'; 
 import influencerRoutes from './routes/influencerRoutes.js';
+import connectionRoutes from './routes/connectionRoutes.js'
 // Middleware
 import { notFound, errorHandler } from './middleware/authMiddleware.js'; 
 
@@ -80,7 +81,8 @@ app.use(cors(corsOptions));
 app.use('/api/auth', authRoutes);       
 app.use('/api/social', socialRoutes);
 app.use('/api/brand',brandRoutes);
-app.use('/api/influencers', influencerRoutes);   
+app.use('/api/influencers', influencerRoutes);  
+app.use('/api/connection',connectionRoutes); 
 
 // Health Check
 app.get('/api/health', (req, res) => {
