@@ -7,13 +7,14 @@ import {
     getInviteDetails, 
     joinBrand,
     getMyBrands,
-    getBrandDetails
+    getBrandDetails,
+    searchBrands
 } from '../controllers/brandController.js';
 import { checkBrandRole } from '../middleware/brandMiddleware.js';
 
 // --- Public / General ---
 router.get('/invite-details/:token', getInviteDetails);
-
+router.get('/search',protect, searchBrands);
 // --- Protected (Login Required) ---
 router.post('/create', protect, createBrand);
 router.post('/join', protect, joinBrand);

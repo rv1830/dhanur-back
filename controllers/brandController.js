@@ -184,3 +184,123 @@ export const joinBrand = asyncHandler(async (req, res) => {
         redirectTo: user.userType === null ? '/select-usertype' : `/dashboard/${brand.bid}`
     });
 });
+
+
+// =================================================================
+// 🔍 SEARCH BRANDS (Highly Optimized Aggregation Pipeline)
+// =================================================================
+export const searchBrands = asyncHandler(async (req, res) => {
+    const { 
+        keyword, 
+        industry, 
+        page = 1, 
+        limit = 10 
+    } = req.query;
+
+    const pageNum = Number(page);
+    const limitNum = Number(limit);
+    const skip = (pageNum - 1) * limitNum;
+
+    const pipeline = [];
+
+    // 1. MATCH STAGE (Search Filters)
+    const matchStage = {};
+
+    if (keyword) {
+        matchStage.$or = [
+            { brandName: { $regex: keyword, $options: 'i' } },
+            { description: { $regex: keyword, $options: 'i' } }
+        ];
+    }
+
+    if (industry) {
+        matchStage.industry = { $regex: industry, $options: 'i' };
+    }
+
+    pipeline.push({ $match: matchStage });
+
+    // =========================================================
+    // 👤 ADMIN FETCHING LOGIC START
+    // =========================================================
+    
+    // Step A: 'members' array me se sirf 'BRAND ADMIN' wala object nikalo
+    pipeline.push({
+        $addFields: {
+            adminMember: {
+                $arrayElemAt: [
+                    {
+                        $filter: {
+                            input: "$members",
+                            as: "member",
+                            cond: { $eq: ["$$member.role", "BRAND ADMIN"] }
+                        }
+                    },
+                    0
+                ]
+            }
+        }
+    });
+
+    // Step B: Us Admin ki User ID se 'users' collection me JOIN maaro
+    pipeline.push({
+        $lookup: {
+            from: "users",
+            localField: "adminMember.user",
+            foreignField: "_id",
+            as: "adminDetails"
+        }
+    });
+
+    // Step C: Array ko Object banao (Unwind)
+    pipeline.push({
+        $unwind: {
+            path: "$adminDetails",
+            preserveNullAndEmptyArrays: true // Agar admin delete ho gaya ho tab bhi brand dikhe
+        }
+    });
+    // =========================================================
+    // 👤 ADMIN FETCHING LOGIC END
+    // =========================================================
+
+
+    // 2. PROJECTION STAGE (Clean Data)
+    pipeline.push({
+        $project: {
+            _id: 0,
+            bid: 1,            
+            brandName: 1,
+            industry: 1,
+            logo: 1,
+            website: 1,
+            companyEmail: 1,
+            description: 1,
+            
+            // ✅ Admin Info Add kar diya
+            admin: {
+                name: "$adminDetails.name",
+                uid: "$adminDetails.uid",
+                profilePicture: "$adminDetails.profilePicture"
+            }
+        }
+    });
+
+    // 3. PAGINATION
+    pipeline.push({
+        $facet: {
+            metadata: [{ $count: "total" }],
+            data: [{ $skip: skip }, { $limit: limitNum }]
+        }
+    });
+
+    const result = await Brand.aggregate(pipeline);
+    const brands = result[0].data;
+    const total = result[0].metadata[0] ? result[0].metadata[0].total : 0;
+
+    res.json({
+        success: true,
+        page: pageNum,
+        totalPages: Math.ceil(total / limitNum),
+        totalBrands: total,
+        brands
+    });
+});
