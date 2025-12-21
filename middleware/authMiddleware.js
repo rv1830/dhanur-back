@@ -6,10 +6,10 @@ import User from '../models/User.js';
 // 🍪 COOKIE OPTIONS
 // =================================================================
 export const cookieOptions = {
-    httpOnly: true, // Always true for security
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
-    maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
+    httpOnly: true,
+    secure: true,      // Hamesha TRUE (Kyunki backend Render par HTTPS hai)
+    sameSite: 'none',  // Hamesha NONE (Kyunki Localhost -> Render cross-site hai)
+    maxAge: 30 * 24 * 60 * 60 * 1000,
     path: '/',
 };
 
