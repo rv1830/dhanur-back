@@ -145,9 +145,9 @@ export const authUser = asyncHandler(async (req, res) => {
                 uid: user.uid, 
                 email: user.email, 
                 name: user.name,
-                userType: user.userType,
-                profileComplete: user.profileComplete,
-                onboardingComplete: user.onboardingComplete,
+                userType: user.userType, 
+                profileComplete: user.profileComplete, 
+                onboardingComplete: user.onboardingComplete, 
                 authProvider: user.authProvider,
                 message: 'Login successful. Please complete your profile.',
                 redirectTo: '/profile-setup'
@@ -159,9 +159,9 @@ export const authUser = asyncHandler(async (req, res) => {
                 uid: user.uid, 
                 email: user.email, 
                 name: user.name,
-                userType: user.userType,
-                profileComplete: user.profileComplete,
-                onboardingComplete: user.onboardingComplete,
+                userType: user.userType, 
+                profileComplete: user.profileComplete, 
+                onboardingComplete: user.onboardingComplete, 
                 authProvider: user.authProvider,
                 message: 'Login successful. Please select user type.',
                 redirectTo: '/select-usertype'
@@ -171,6 +171,13 @@ export const authUser = asyncHandler(async (req, res) => {
         // ✅ UPDATED: Use Helper for Dynamic Path
         const dashboardPath = await getDashboardPath(user);
         
+        // ✅ FETCH BRAND ID FOR RESPONSE
+        let brandId = null;
+        if (user.userType === 'BRAND') {
+            const brand = await Brand.findOne({ 'members.user': user._id }).select('bid');
+            if (brand) brandId = brand.bid;
+        }
+
         res.json({ 
             uid: user.uid, 
             email: user.email, 
@@ -182,6 +189,7 @@ export const authUser = asyncHandler(async (req, res) => {
             profileComplete: user.profileComplete,
             onboardingComplete: user.onboardingComplete,
             authProvider: user.authProvider,
+            brandId: brandId, // ✅ Added brandId here
             message: 'Login successful',
             redirectTo: dashboardPath // Will be /dashboard or /dashboard/br_XXXX
         });
@@ -223,6 +231,13 @@ export const changePassword = asyncHandler(async (req, res) => {
 });
 
 export const checkAuthStatus = asyncHandler(async (req, res) => {
+    // ✅ FETCH BRAND ID
+    let brandId = null;
+    if (req.user.userType === 'BRAND') {
+        const brand = await Brand.findOne({ 'members.user': req.user._id }).select('bid');
+        if (brand) brandId = brand.bid;
+    }
+
     res.status(200).json({
         isAuthenticated: true,
         user: { 
@@ -236,6 +251,7 @@ export const checkAuthStatus = asyncHandler(async (req, res) => {
             userType: req.user.userType,
             profileComplete: req.user.profileComplete, 
             onboardingComplete: req.user.onboardingComplete,
+            brandId: brandId // ✅ Added brandId here
         },
     });
 });
