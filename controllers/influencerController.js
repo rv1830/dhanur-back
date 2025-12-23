@@ -1,5 +1,6 @@
 import asyncHandler from 'express-async-handler';
 import User from '../models/User.js';
+import Brand from '../models/Brand.js';
 import SocialAccount from '../models/SocialAccount.js';
 import YouTubeAnalytics from '../models/YouTubeAnalytics.js';
 import InstagramAnalytics from '../models/InstagramAnalytics.js';
