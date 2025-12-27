@@ -3,6 +3,7 @@ import Application from '../models/Application.js';
 import Brand from '../models/Brand.js';
 import Connection from '../models/Connection.js';
 
+// --- CREATE CAMPAIGN ---
 export const createCampaign = async (req, res) => {
     try {
         const userId = req.user._id;
@@ -43,29 +44,82 @@ export const createCampaign = async (req, res) => {
     }
 };
 
+// --- GET ALL CAMPAIGNS (Optimized & Paginated) ---
 export const getAllCampaigns = async (req, res) => {
     try {
-        const { platform, category, minBudget, maxBudget } = req.query;
+        // Extract query parameters with defaults
+        const { 
+            page = 1, 
+            limit = 10, 
+            search, 
+            platform, 
+            category, 
+            minBudget, 
+            maxBudget, 
+            sortBy = 'newest' 
+        } = req.query;
+
+        // 1. Build Query Object
         let query = { status: 'ACTIVE' };
 
+        // Search by Title (Case Insensitive)
+        if (search) {
+            query.title = { $regex: search, $options: 'i' };
+        }
+
+        // Exact Filters
         if (platform) query.platform = platform;
         if (category) query.category = category;
+
+        // Budget Range Filter
         if (minBudget || maxBudget) {
             query.budgetAmount = {};
             if (minBudget) query.budgetAmount.$gte = Number(minBudget);
             if (maxBudget) query.budgetAmount.$lte = Number(maxBudget);
         }
 
-        const campaigns = await Campaign.find(query)
-            .populate('brand', 'brandName logo industry')
-            .sort({ createdAt: -1 });
+        // 2. Pagination Calculation
+        const pageNum = Number(page);
+        const limitNum = Number(limit);
+        const skip = (pageNum - 1) * limitNum;
 
-        res.status(200).json({ success: true, count: campaigns.length, campaigns });
+        // 3. Sorting Logic
+        let sortOptions = { createdAt: -1 }; // Default: Newest first
+        if (sortBy === 'oldest') sortOptions = { createdAt: 1 };
+        if (sortBy === 'highBudget') sortOptions = { budgetAmount: -1 };
+        if (sortBy === 'lowBudget') sortOptions = { budgetAmount: 1 };
+
+        // 4. Fetch Data & Count in Parallel (Faster performance)
+        const [totalCampaigns, campaigns] = await Promise.all([
+            Campaign.countDocuments(query),
+            Campaign.find(query)
+                .select('cid title brand platform category budgetType budgetAmount deadline -_id') // Lightweight response
+                .populate('brand', 'brandName logo -_id') // Populating only necessary brand info
+                .sort(sortOptions)
+                .skip(skip)
+                .limit(limitNum)
+        ]);
+
+        // 5. Send Response
+        res.status(200).json({
+            success: true,
+            pagination: {
+                total: totalCampaigns,
+                page: pageNum,
+                limit: limitNum,
+                totalPages: Math.ceil(totalCampaigns / limitNum),
+                hasNextPage: pageNum * limitNum < totalCampaigns,
+                hasPrevPage: pageNum > 1
+            },
+            campaigns
+        });
+
     } catch (error) {
         res.status(500).json({ success: false, message: error.message });
     }
 };
 
+// --- GET CAMPAIGN BY ID ---
 export const getCampaignById = async (req, res) => {
     try {
         const campaign = await Campaign.findOne({ cid: req.params.cid })
@@ -81,6 +135,7 @@ export const getCampaignById = async (req, res) => {
     }
 };
 
+// --- UPDATE CAMPAIGN ---
 export const updateCampaign = async (req, res) => {
     try {
         const userId = req.user._id;
@@ -105,6 +160,7 @@ export const updateCampaign = async (req, res) => {
     }
 };
 
+// --- DELETE CAMPAIGN ---
 export const deleteCampaign = async (req, res) => {
     try {
         const userId = req.user._id;
@@ -126,6 +182,7 @@ export const deleteCampaign = async (req, res) => {
     }
 };
 
+// --- APPLY TO CAMPAIGN ---
 export const applyToCampaign = async (req, res) => {
     try {
         const userId = req.user._id;
@@ -158,6 +215,7 @@ export const applyToCampaign = async (req, res) => {
     }
 };
 
+// --- GET APPLICANTS ---
 export const getCampaignApplicants = async (req, res) => {
     try {
         const { cid } = req.params;
@@ -180,6 +238,7 @@ export const getCampaignApplicants = async (req, res) => {
     }
 };
 
+// --- UPDATE APPLICATION STATUS ---
 export const updateApplicationStatus = async (req, res) => {
     try {
         const { appId } = req.params;
