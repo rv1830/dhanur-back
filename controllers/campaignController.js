@@ -6,13 +6,23 @@ import Connection from '../models/Connection.js';
 export const createCampaign = async (req, res) => {
     try {
         const userId = req.user._id;
-        const brand = await Brand.findOne({ 'members.user': userId });
+        const { brandId, title, description, platform, category, requirements, budgetType, budgetAmount, deadline } = req.body;
 
-        if (!brand) {
-            return res.status(403).json({ message: "You are not authorized to create a campaign for any brand." });
+        if (!brandId) {
+            return res.status(400).json({ message: "Brand ID is required." });
         }
 
-        const { title, description, platform, category, requirements, budgetType, budgetAmount, deadline } = req.body;
+        const brand = await Brand.findOne({ bid: brandId });
+
+        if (!brand) {
+            return res.status(404).json({ message: "Brand not found." });
+        }
+
+        const isMember = brand.members.some(member => member.user.toString() === userId.toString());
+
+        if (!isMember) {
+            return res.status(403).json({ message: "You are not authorized to create a campaign for this brand." });
+        }
 
         const newCampaign = await Campaign.create({
             brand: brand._id,
