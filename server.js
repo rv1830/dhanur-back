@@ -16,7 +16,8 @@ import { runDailyYoutubeSync } from './services/youtubeService.js';
 import { runDailyFacebookSync } from './services/facebookService.js'; 
 import { runDailyInstagramSync } from './services/instagramService.js'; 
 import influencerRoutes from './routes/influencerRoutes.js';
-import connectionRoutes from './routes/connectionRoutes.js'
+import connectionRoutes from './routes/connectionRoutes.js';
+import campaignRoutes from './routes/campaignRoutes.js';
 // Middleware
 import { notFound, errorHandler } from './middleware/authMiddleware.js'; 
 
@@ -83,7 +84,7 @@ app.use('/api/social', socialRoutes);
 app.use('/api/brand',brandRoutes);
 app.use('/api/influencers', influencerRoutes);  
 app.use('/api/connection',connectionRoutes); 
-
+app.use('/api/campaigns',campaignRoutes);
 // Health Check
 app.get('/api/health', (req, res) => {
     res.json({ status: 'OK', message: 'Dhanur Backend is LIVE!', timestamp: new Date().toISOString() });

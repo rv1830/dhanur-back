@@ -1,0 +1,232 @@
+import Campaign from '../models/Campaign.js';
+import Application from '../models/Application.js';
+import Brand from '../models/Brand.js';
+import Connection from '../models/Connection.js';
+
+export const createCampaign = async (req, res) => {
+    try {
+        const userId = req.user._id;
+        const brand = await Brand.findOne({ 'members.user': userId });
+
+        if (!brand) {
+            return res.status(403).json({ message: "You are not authorized to create a campaign for any brand." });
+        }
+
+        const { title, description, platform, category, requirements, budgetType, budgetAmount, deadline } = req.body;
+
+        const newCampaign = await Campaign.create({
+            brand: brand._id,
+            createdBy: userId,
+            title,
+            description,
+            platform,
+            category,
+            requirements,
+            budgetType,
+            budgetAmount,
+            deadline
+        });
+
+        res.status(201).json({ success: true, campaign: newCampaign });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+export const getAllCampaigns = async (req, res) => {
+    try {
+        const { platform, category, minBudget, maxBudget } = req.query;
+        let query = { status: 'ACTIVE' };
+
+        if (platform) query.platform = platform;
+        if (category) query.category = category;
+        if (minBudget || maxBudget) {
+            query.budgetAmount = {};
+            if (minBudget) query.budgetAmount.$gte = Number(minBudget);
+            if (maxBudget) query.budgetAmount.$lte = Number(maxBudget);
+        }
+
+        const campaigns = await Campaign.find(query)
+            .populate('brand', 'brandName logo industry')
+            .sort({ createdAt: -1 });
+
+        res.status(200).json({ success: true, count: campaigns.length, campaigns });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+export const getCampaignById = async (req, res) => {
+    try {
+        const campaign = await Campaign.findOne({ cid: req.params.cid })
+            .populate('brand', 'brandName logo description website');
+
+        if (!campaign) {
+            return res.status(404).json({ message: "Campaign not found" });
+        }
+
+        res.status(200).json({ success: true, campaign });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+export const updateCampaign = async (req, res) => {
+    try {
+        const userId = req.user._id;
+        const campaign = await Campaign.findOne({ cid: req.params.cid });
+        
+        if (!campaign) return res.status(404).json({ message: "Campaign not found" });
+
+        const brand = await Brand.findOne({ _id: campaign.brand, 'members.user': userId });
+        if (!brand) {
+            return res.status(403).json({ message: "Not authorized to update this campaign" });
+        }
+
+        const updatedCampaign = await Campaign.findOneAndUpdate(
+            { cid: req.params.cid },
+            req.body,
+            { new: true, runValidators: true }
+        );
+
+        res.status(200).json({ success: true, campaign: updatedCampaign });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+export const deleteCampaign = async (req, res) => {
+    try {
+        const userId = req.user._id;
+        const campaign = await Campaign.findOne({ cid: req.params.cid });
+        
+        if (!campaign) return res.status(404).json({ message: "Campaign not found" });
+
+        const brand = await Brand.findOne({ _id: campaign.brand, 'members.user': userId });
+        if (!brand) {
+            return res.status(403).json({ message: "Not authorized to delete this campaign" });
+        }
+
+        await campaign.deleteOne();
+        await Application.deleteMany({ campaign: campaign._id });
+
+        res.status(200).json({ success: true, message: "Campaign deleted successfully" });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+export const applyToCampaign = async (req, res) => {
+    try {
+        const userId = req.user._id;
+        const { cid } = req.params;
+        const { message, bidAmount } = req.body;
+
+        const campaign = await Campaign.findOne({ cid });
+        if (!campaign) return res.status(404).json({ message: "Campaign not found" });
+
+        if (campaign.status !== 'ACTIVE') {
+            return res.status(400).json({ message: "This campaign is no longer accepting applications." });
+        }
+
+        const existingApp = await Application.findOne({ campaign: campaign._id, influencer: userId });
+        if (existingApp) {
+            return res.status(400).json({ message: "You have already applied to this campaign." });
+        }
+
+        const newApplication = await Application.create({
+            campaign: campaign._id,
+            influencer: userId,
+            message,
+            bidAmount
+        });
+
+        res.status(201).json({ success: true, message: "Applied successfully", application: newApplication });
+
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+export const getCampaignApplicants = async (req, res) => {
+    try {
+        const { cid } = req.params;
+        const userId = req.user._id;
+
+        const campaign = await Campaign.findOne({ cid });
+        if (!campaign) return res.status(404).json({ message: "Campaign not found" });
+
+        const brand = await Brand.findOne({ _id: campaign.brand, 'members.user': userId });
+        if (!brand) return res.status(403).json({ message: "Not authorized to view applicants" });
+
+        const applications = await Application.find({ campaign: campaign._id })
+            .populate('influencer', 'name email profilePicture profile.bio')
+            .sort({ createdAt: -1 });
+
+        res.status(200).json({ success: true, count: applications.length, applications });
+
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+export const updateApplicationStatus = async (req, res) => {
+    try {
+        const { appId } = req.params;
+        const { status } = req.body;
+        const userId = req.user._id;
+
+        const application = await Application.findOne({ appId })
+            .populate({
+                path: 'campaign',
+                populate: { path: 'brand' }
+            });
+
+        if (!application) {
+            return res.status(404).json({ message: "Application not found" });
+        }
+
+        const campaign = application.campaign;
+        const brand = campaign.brand;
+
+        const isMember = brand.members.some(member => member.user.toString() === userId.toString());
+        if (!isMember) {
+            return res.status(403).json({ message: "You are not authorized to manage this application." });
+        }
+
+        application.status = status;
+        await application.save();
+
+        if (status === 'ACCEPTED') {
+            let collabType = 'GENERAL';
+            if (campaign.budgetType === 'FIXED' || campaign.budgetType === 'NEGOTIABLE') collabType = 'PAID_COLLAB';
+            if (campaign.budgetType === 'BARTER') collabType = 'BARTER';
+
+            await Connection.findOneAndUpdate(
+                { 
+                    brandId: brand._id, 
+                    influencerId: application.influencer 
+                },
+                {
+                    $set: {
+                        initiatedBy: 'BRAND',
+                        status: 'ACCEPTED',
+                        collabType: collabType,
+                        pitchMessage: `Connection established via Campaign: ${campaign.title}`,
+                        lastActionAt: new Date()
+                    }
+                },
+                { new: true, upsert: true, setDefaultsOnInsert: true }
+            );
+        }
+
+        res.status(200).json({ 
+            success: true, 
+            message: `Application status updated to ${status}`, 
+            application 
+        });
+
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
