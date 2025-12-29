@@ -93,7 +93,8 @@ export const getAllCampaigns = async (req, res) => {
         const [totalCampaigns, campaigns] = await Promise.all([
             Campaign.countDocuments(query),
             Campaign.find(query)
-                .select('cid title brand platform category budgetType budgetAmount deadline -_id') // Lightweight response
+                // Removed 'cid' and removed '-_id' (taaki transform function id bana sake)
+                .select('title brand platform category budgetType budgetAmount deadline') 
                 .populate('brand', 'brandName logo -_id') // Populating only necessary brand info
                 .sort(sortOptions)
                 .skip(skip)
@@ -122,7 +123,8 @@ export const getAllCampaigns = async (req, res) => {
 // --- GET CAMPAIGN BY ID ---
 export const getCampaignById = async (req, res) => {
     try {
-        const campaign = await Campaign.findOne({ cid: req.params.cid })
+        // Changed to findById using req.params.id
+        const campaign = await Campaign.findById(req.params.id)
             .populate('brand', 'brandName logo description website');
 
         if (!campaign) {
@@ -139,7 +141,9 @@ export const getCampaignById = async (req, res) => {
 export const updateCampaign = async (req, res) => {
     try {
         const userId = req.user._id;
-        const campaign = await Campaign.findOne({ cid: req.params.cid });
+        
+        // Changed to findById using req.params.id
+        const campaign = await Campaign.findById(req.params.id);
         
         if (!campaign) return res.status(404).json({ message: "Campaign not found" });
 
@@ -148,8 +152,8 @@ export const updateCampaign = async (req, res) => {
             return res.status(403).json({ message: "Not authorized to update this campaign" });
         }
 
-        const updatedCampaign = await Campaign.findOneAndUpdate(
-            { cid: req.params.cid },
+        const updatedCampaign = await Campaign.findByIdAndUpdate(
+            req.params.id,
             req.body,
             { new: true, runValidators: true }
         );
@@ -164,7 +168,9 @@ export const updateCampaign = async (req, res) => {
 export const deleteCampaign = async (req, res) => {
     try {
         const userId = req.user._id;
-        const campaign = await Campaign.findOne({ cid: req.params.cid });
+        
+        // Changed to findById using req.params.id
+        const campaign = await Campaign.findById(req.params.id);
         
         if (!campaign) return res.status(404).json({ message: "Campaign not found" });
 
@@ -186,10 +192,12 @@ export const deleteCampaign = async (req, res) => {
 export const applyToCampaign = async (req, res) => {
     try {
         const userId = req.user._id;
-        const { cid } = req.params;
+        // Changed cid to id in params
+        const { id } = req.params; 
         const { message, bidAmount } = req.body;
 
-        const campaign = await Campaign.findOne({ cid });
+        // Changed to findById
+        const campaign = await Campaign.findById(id);
         if (!campaign) return res.status(404).json({ message: "Campaign not found" });
 
         if (campaign.status !== 'ACTIVE') {
@@ -218,10 +226,12 @@ export const applyToCampaign = async (req, res) => {
 // --- GET APPLICANTS ---
 export const getCampaignApplicants = async (req, res) => {
     try {
-        const { cid } = req.params;
+        // Changed cid to id in params
+        const { id } = req.params;
         const userId = req.user._id;
 
-        const campaign = await Campaign.findOne({ cid });
+        // Changed to findById
+        const campaign = await Campaign.findById(id);
         if (!campaign) return res.status(404).json({ message: "Campaign not found" });
 
         const brand = await Brand.findOne({ _id: campaign.brand, 'members.user': userId });

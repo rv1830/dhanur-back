@@ -1,8 +1,7 @@
 import mongoose from 'mongoose';
-import { generateUniquePublicId } from '../utils/idGenerator.js';
 
 const CampaignSchema = new mongoose.Schema({
-    cid: { type: String, unique: true, index: true },
+    // cid field removed
     brand: { 
         type: mongoose.Schema.Types.ObjectId, 
         ref: 'Brand', 
@@ -37,17 +36,14 @@ const CampaignSchema = new mongoose.Schema({
 }, { timestamps: true });
 
 const transformResponse = (doc, ret) => {
-    delete ret._id;
-    delete ret.__v;
+    ret.id = ret._id; // _id ko id mein map kiya
+    delete ret._id;   // _id remove kiya
+    delete ret.__v;   // __v remove kiya
     return ret;
 };
 CampaignSchema.set('toJSON', { transform: transformResponse });
 CampaignSchema.set('toObject', { transform: transformResponse });
 
-CampaignSchema.pre('save', async function () {
-    if (!this.cid) {
-        this.cid = await generateUniquePublicId(this.constructor, 'CMP');
-    }
-});
+// pre('save') hook removed
 
 export default mongoose.model('Campaign', CampaignSchema);
