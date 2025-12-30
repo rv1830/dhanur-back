@@ -20,7 +20,13 @@ const CampaignSchema = new mongoose.Schema({
         required: true 
     },
     category: { type: String, required: true },
-    requirements: { type: String },
+    
+    // 👇 THIS IS THE FIX 👇
+    requirements: { 
+        type: [String], // Changed from String to [String]
+        default: [] 
+    },
+    
     budgetType: { 
         type: String, 
         enum: ['FIXED', 'NEGOTIABLE', 'BARTER'], 
@@ -36,14 +42,12 @@ const CampaignSchema = new mongoose.Schema({
 }, { timestamps: true });
 
 const transformResponse = (doc, ret) => {
-    ret.id = ret._id; // _id ko id mein map kiya
-    delete ret._id;   // _id remove kiya
-    delete ret.__v;   // __v remove kiya
+    ret.id = ret._id; 
+    delete ret._id;   
+    delete ret.__v;   
     return ret;
 };
 CampaignSchema.set('toJSON', { transform: transformResponse });
 CampaignSchema.set('toObject', { transform: transformResponse });
-
-// pre('save') hook removed
 
 export default mongoose.model('Campaign', CampaignSchema);
